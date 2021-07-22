@@ -1014,82 +1014,12 @@ library SafeERC20 {
     }
 }
 
-/**
- * @dev Contract module that helps prevent reentrant calls to a function.
- *
- * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
- * available, which can be applied to functions to make sure there are no nested
- * (reentrant) calls to them.
- *
- * Note that because there is a single `nonReentrant` guard, functions marked as
- * `nonReentrant` may not call one another. This can be worked around by making
- * those functions `private`, and then adding `external` `nonReentrant` entry
- * points to them.
- *
- * TIP: If you would like to learn more about reentrancy and alternative ways
- * to protect against it, check out our blog post
- * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
- */
-abstract contract ReentrancyGuard {
-    // Booleans are more expensive than uint256 or any type that takes up a full
-    // word because each write operation emits an extra SLOAD to first read the
-    // slot's contents, replace the bits taken up by the boolean, and then write
-    // back. This is the compiler's defense against contract upgrades and
-    // pointer aliasing, and it cannot be disabled.
-
-    // The values being non-zero value makes deployment a bit more expensive,
-    // but in exchange the refund on every call to nonReentrant will be lower in
-    // amount. Since refunds are capped to a percentage of the total
-    // transaction's gas, it is best to keep them low in cases like this one, to
-    // increase the likelihood of the full refund coming into effect.
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
-
-    uint256 private _status;
-
-    constructor() {
-        _status = _NOT_ENTERED;
-    }
-
-    /**
-     * @dev Prevents a contract from calling itself, directly or indirectly.
-     * Calling a `nonReentrant` function from another `nonReentrant`
-     * function is not supported. It is possible to prevent this from happening
-     * by making the `nonReentrant` function external, and make it call a
-     * `private` function that does the actual work.
-     */
-    modifier nonReentrant() {
-        // On the first call to nonReentrant, _notEntered will be true
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-
-        // Any calls to nonReentrant after this point will fail
-        _status = _ENTERED;
-
-        _;
-
-        // By storing the original value once again, a refund is triggered (see
-        // https://eips.ethereum.org/EIPS/eip-2200)
-        _status = _NOT_ENTERED;
-    }
-}
-
-contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
+contract StakeHubToken is ERC20, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
-    //uint256 for nonburn voting //
-    uint256 public nonburnYesVoteAmount;
-    uint256 public nonburnNoVoteAmount;
-    uint256 public nonburnVotingBlockEnd;
-    
-    //uuint256 for burn voting //
-    uint256 public votingBlockEnd;
-    uint256 public yesVoteAmount;
-    uint256 public noVoteAmount;
-    uint256 public minimumVoteAmount;
-    
     address[] internal stakeholders;
-    uint256[] internal stakePair;
+    
 
     mapping(address => uint256) internal stakes;
 
@@ -1097,61 +1027,26 @@ contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
     
     mapping (address => uint256) internal stakeStart;
     
-    mapping (address => uint256) internal voterStatus;
+    mapping(address => address) internal stakePairs;
     
-    mapping (uint256 => uint256) internal stakePairRewardRate;
+    mapping(address => uint256) internal stakePairRewardBlockTime;
     
-    mapping (uint256 => uint256) internal stakePairRewardBlockTime;
+    mapping(address => uint256) internal stakePairRewardRate;
+    
+    mapping(address => uint256) internal userPairStakeAmount;
+    
+    mapping(address => uint256) internal userPairFinalStake;
 
     constructor(address _owner, uint256 _supply) 
-        public ERC20 ("test", "test")
+        public ERC20 ("stakehub.finance", "STKHB")
     { 
         _mint(_owner, _supply);
     }
-
-    // ---------- STAKES ----------
-
-    /**
-     * @notice A method for a stakeholder to create a stake.
-     * @param _stakeMaker The creator of the stake.
-     * @param _stake The size of the stake to be created.
-     */
-    function createStake(address _stakeMaker, uint256 _stake, uint256 _stakePair)
-        onlyStakeholder(_stakeMaker)
-        public
-    {
-            _stake = _stake * 1e18;
-            uint256 _stakedAmount;
-            if(stakes[msg.sender] > 0) collectRewards(_stakeMaker, _stakePair);
-            _burn(msg.sender, _stake);
-            _stakedAmount = _stake - (((_stake * 1e5) - ((_stake*1e5) * (.995 * 1e5) / 1e5)) / 1e5);
-            if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
-            stakes[msg.sender] = stakes[msg.sender].add(_stakedAmount);
-            stakeStart[_stakeMaker] = block.timestamp;
-    }
-
-    /**
-     * @notice A method for a stakeholder to remove a stake.
-     * @param _stakeholder The stakeholder to remove stakes for
-     * @param _stake The size of the stake to be removed.
-     */
-    function removeStake (address _stakeholder, uint256 _stake, uint256 _stakePair)
-        onlyStakeholder(_stakeholder)
-        public
-    {
-        _stake = _stake * 1e18;
-        collectRewards(_stakeholder, _stakePair);
-        stakes[msg.sender] = stakes[msg.sender].sub(_stake);
-        if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
-        _mint(msg.sender, _stake);
-        if(stakes[msg.sender] == 0) stakeStart[_stakeholder] = 0;
-    }
-
-    /**
-     * @notice A method to retrieve the stake for a stakeholder.
-     * @param _stakeholder The stakeholder to retrieve the stake for.
-     * @return uint256 The amount of wei staked.
-     */
+    
+    
+    
+    
+    
     function stakeOf(address _stakeholder)
         public
         view
@@ -1159,47 +1054,7 @@ contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
     {
         return stakes[_stakeholder];
     }
-
-    /**
-     * @notice A method to the aggregated stakes from all stakeholders.
-     * @return uint256 The aggregated stakes from all stakeholders.
-     */
-    function totalStakes()
-        public
-        view
-        returns(uint256)
-    {
-        uint256 _totalStakes = 0;
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            _totalStakes = _totalStakes.add(stakes[stakeholders[s]]);
-        }
-        return _totalStakes;
-    }
     
-    /**
-     * @notice A method to the aggregated rewards from all stakeholders.
-     * @return uint256 The aggregated rewards from all stakeholders.
-     */
-    function totalRewards()
-        public
-        view
-        returns(uint256)
-    {
-        uint256 _totalRewards = 0;
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            _totalRewards = _totalRewards.add(calculateReward(stakeholders[s], stakePair[s]));
-        }
-        return _totalRewards;
-    }
-
-    // ---------- STAKEHOLDERS ----------
-
-    /**
-     * @notice A method to check if an address is a stakeholder.
-     * @param _address The address to verify.
-     * @return bool, uint256 Whether the address is a stakeholder, 
-     * and if so its position in the stakeholders array.
-     */
     function isStakeholder(address _address)
         public
         view
@@ -1235,204 +1090,35 @@ contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
             stakeholders.pop();
         } 
     }
-
-    // ---------- REWARDS ----------
     
-    /**
-     * @notice A method to allow a stakeholder to check their rewards.
-     * @param _stakeholder The stakeholder to check rewards for.
-     */
-    function rewardOf(address _stakeholder) 
-        public
-        view
-        returns(uint256)
-    {
-        return rewards[_stakeholder];
-    }
-
-    /** 
-     * @notice A simple method that calculates the rewards for each stakeholder.
-     * @param _stakeholder The stakeholder to calculate rewards for.
-     */
-    function calculateReward(address _stakeholder, uint256 _stakePair)
-        public
-        view
-        returns(uint256)
-    {
-        uint256 newRewards;
-        
-        newRewards = (stakes[_stakeholder] * (((block.timestamp - stakeStart[_stakeholder]) / stakePairRewardBlockTime[_stakePair]) * stakePairRewardRate[_stakePair]) / 1e15);
-        return newRewards;    
+    function createStakePair(address _stakePair) public onlyOwner {
+        stakePairs[_stakePair] = _stakePair;
     }
     
-    /**
-     * @notice A method to attribute and distrbute rewards
-     * @param _stakeholder The stakeholder to attribute rewards to.
-     */
-    function collectRewards(address _stakeholder, uint256 _stakePair) 
-        public
-        nonReentrant
-    {
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            address stakeholder = _stakeholder;
-            uint256 reward = calculateReward(stakeholder, _stakePair);
-            rewards[stakeholder] = rewards[stakeholder].add(reward);
-            stakeStart[msg.sender] = block.timestamp;
-            rewards[msg.sender] = 0;
-            _mint(msg.sender, reward);
-        }
+    function viewStakePairs(address _stakePair) public view returns(address) {
+        return stakePairs[_stakePair];
     }
     
-    function createStakePair(uint256 _stakePair) public onlyOwner {
-        stakePair.push(_stakePair);
+    function setStakePairRewardRate(uint256 _rewardRate, address _stakePair) public onlyOwner validStakePair(_stakePair) {
+         stakePairRewardRate[stakePairs[_stakePair]] = _rewardRate * 1e3;
     }
     
-    function viewStakePairs(uint256 _stakePair) public view onlyOwner validStakePair(_stakePair) returns(uint256) {
-       return stakePair[_stakePair];
-    }
-    
-    function setStakePairRewardRate(uint256 _rewardRate, uint256 _stakePair) public onlyOwner validStakePair(_stakePair) returns(uint256) {
-         for (uint256 s = 0; s < stakeholders.length; s += 1){
-            collectRewards(stakeholders[s], stakePair[s]);
-        }
-         return stakePairRewardRate[stakePair[_stakePair]] = _rewardRate * 1e3;
-    }
-    
-    function viewStakePairRewardRate(uint256 _stakePair) public view validStakePair(_stakePair) returns(uint256) {
+    function viewStakePairRewardRate(address _stakePair) public view validStakePair(_stakePair) returns(uint256) {
         return stakePairRewardRate[_stakePair];
     }
     
-    function setStakePairRewardBlockTime(uint256 _time, uint256 _stakePair) public onlyOwner validStakePair(_stakePair) returns (uint256) {
-        return stakePairRewardBlockTime[stakePair[_stakePair]] = _time;
+    function setStakePairRewardBlockTime(uint256 _time, address _stakePair) public onlyOwner validStakePair(_stakePair) returns (uint256) {
+        return stakePairRewardBlockTime[stakePairs[_stakePair]] = _time;
     }
 
-    function viewStakePairRewardBlockTime(uint256 _stakePair) public view validStakePair(_stakePair) returns (uint256) {
+    function viewStakePairRewardBlockTime(address _stakePair) public view validStakePair(_stakePair) returns (uint256) {
         return stakePairRewardBlockTime[_stakePair];
     }
 
-    modifier validStakePair(uint256 _stakePair) {
-        require(stakePair[_stakePair] == _stakePair);
-        _;
-    }
-    
-    modifier onlyCurrentStaker(address _stakeholder) {
-        require(stakeOf(msg.sender) != 0);
-        _;
-    }
-    
-    modifier onlyStakeholder(address _stakeholder) {
-        require(msg.sender == _stakeholder);
-        _;
-    }
-    
-    // ---------- VOTING THAT BURNS STKHB ----------
-    //For all functions below STKHB will be permanently burned
-    
-    /**
-     * @notice A method to start a voting period for burnable votes & reset previous vote tallys
-     */
-    function setVotingPeriod(uint256 _time) public onlyOwner {
-        votingBlockEnd = block.timestamp + _time;
-        yesVoteAmount = 0;
-        noVoteAmount = 0;
-    }
-     
-    /**
-     * @notice A method to vote yes and burn the amount voted
-     * @param _voteAmount Defines the number of tokens to burn
-     */ 
-    function voteYes(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) nonReentrant returns(uint256) {
-        uint256 voteAmount = _voteAmount;
-        _burn(msg.sender, voteAmount);
-        return yesVoteAmount = yesVoteAmount + voteAmount;
-    }
-     
-    /**
-     * @notice A method to vote no and burn the amount voted
-     * @param _voteAmount Defines the number of tokens to burn
-     */ 
-    function voteNo(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) nonReentrant returns(uint256) {
-        uint256 voteAmount = _voteAmount;
-        _burn(msg.sender, voteAmount);
-        return noVoteAmount = noVoteAmount + voteAmount;
-    }
-    
-    /**
-     * @notice A method to set the minimum number of tokens allowed to participate in a vote
-     * @param _setVoteAmount Defines the minimum number of tokens allowed
-     */  
-    function setMinimumVoteAmount(uint256 _setVoteAmount) public onlyOwner {
-        minimumVoteAmount = _setVoteAmount * 1e18;
-    }
-    
-    /**
-     * @notice A method to only allow vote submission during the alloted voting time
-     */ 
-    modifier inBlockperiod() {
-        require(block.timestamp < votingBlockEnd);
-        _;
-    }
-    
-    /**
-     * @notice A method to only allow vote amounts to meet or exceed the minimum vote amount
-     */ 
-    modifier checkVoteAmount(uint256 _voteAmount) {
-        require(_voteAmount >= (minimumVoteAmount));
+    modifier validStakePair(address _stakePair) {
+        require(stakePairs[_stakePair] == _stakePair);
         _;
     }
     
     
-    // ---------- VOTING THAT DOES NOT BURN STKHB ----------
-    //For all functions below STKHB will be permanently burned\
-    
-    /**
-     * @notice A method to start a voting period for non burable votes - Resets previous vote blockers and resets preivous vote amounts
-     * @param _time Defines the amount of time (in seconds) that the vote will be open
-     */ 
-    function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
-        nonburnVotingBlockEnd = block.timestamp + _time;
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            voterStatus[stakeholders[s]] = 0; 
-        }
-        nonburnYesVoteAmount = 0;
-        nonburnNoVoteAmount = 0;
-    }
-    
-    /**
-     * @notice A method to vote yes based on your total stakeholdings
-     * @param _stakeholder Defines the address submitting the vote
-     */ 
-    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() onlyStakeholder(_stakeholder) onlyCurrentStaker(_stakeholder) inNonburnBlockperiod {
-        uint256 _nonburnVoteYesAmount;
-        _nonburnVoteYesAmount = stakeOf(_stakeholder);
-        nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
-        voterStatus[msg.sender] = 1;
-    }
-    
-    /**
-     * @notice A method to vote no based on your total stakeholdings
-     * @param _stakeholder Defines the address submitting the vote
-     */ 
-    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() onlyStakeholder(_stakeholder) onlyCurrentStaker(_stakeholder) inNonburnBlockperiod() {
-        uint256 _nonburnVoteNoAmount;
-        _nonburnVoteNoAmount = stakeOf(_stakeholder);
-        nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
-        voterStatus[msg.sender] = 1;
-    }
-    
-    /**
-     * @notice A method to only allow voting during the defined block period
-     */ 
-    modifier inNonburnBlockperiod() {
-        require(block.timestamp < nonburnVotingBlockEnd);
-        _;
-    }
-    
-    /**
-     * @notice A method to only allow an address to vote once
-     */ 
-    modifier checkVoteStatus() {
-        require(voterStatus[msg.sender] != 1);
-        _;
-    }
-}
+} 
