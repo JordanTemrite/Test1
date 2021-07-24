@@ -1077,31 +1077,57 @@ contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
  
-
+    /**
+     * @notice Creates STKHB
+     * @param _owner Sets the owner wallet address 
+     * @param _supply Sets the initial supply of STKHB (Uses 18 decimal places).
+     */
     constructor(address _owner, uint256 _supply) 
         public ERC20 ("test", "test")
     { 
         _mint(_owner, _supply);
     }
 
-
-
-    function burnStake(address _stakeMaker, uint256 _stake) external {
+    
+    /**
+     * @notice A method to burn newly staked amounts which can be reminted upon removing the stake.
+     * @param _SP Address of the Stake Pool.
+     * @param _stakeMaker Address of the user creating the stake.
+     * @param _stake The size of the stake to be added.
+     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+     */
+    function burnStake(address _SP, address _stakeMaker, uint256 _stake) external onlyStakePoolCall(_SP) {
          _burn(_stakeMaker, _stake);
     }
     
-    function mintStakedAmount(address _stakingPool) external {
-        uint256 stakes;
-        StakingPools SP = StakingPools(_stakingPool);
-        _mint(msg.sender, stakes);
-        
+    /**
+     * @notice A method to mint staked amounts when removing stakes.
+     * @param _SP Address of the Stake Pool.
+     * @param _stakeholder Address of the user removing the stake.
+     * @param _stake The size of the stake to be removed.
+     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+     */
+    function mintStakedAmount(address _SP, address _stakeholder, uint256 _stake) external onlyStakePoolCall(_SP) {
+        _mint(_stakeholder, _stake);
     }
     
-    function mintRewards(address _stakingPool) external {
-        uint256 rewards;
-        StakingPools SP = StakingPools(_stakingPool);
-        rewards = SP.calculateReward(msg.sender);
-        _mint(msg.sender, rewards);
+    /**
+     * @notice A method to mint rewards from a current stake.
+     * @param _SP Address of the Stake Pool.
+     * @param _stakeholder Address of the user requesting rewards collection.
+     * @param _rewards The reward total to be collected.
+     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+     */
+    function mintRewards(address _SP, address _stakeholder, uint256 _rewards) external onlyStakePoolCall(_SP) {
+        _mint(_stakeholder, _rewards);
+    }
+    
+    /**
+     * @notice onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+     */
+    modifier onlyStakePoolCall(address _SP) {
+        require(msg.sender == _SP);
+        _;
     }
     
 }
@@ -1111,7 +1137,10 @@ contract StakingPools is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
     
     uint256 public rewardRate;
+    
     uint256 public rewardBlockTime;
+    
+    address public stakePool;
     
     address[] internal stakeholders;
 
@@ -1122,6 +1151,18 @@ contract StakingPools is Ownable, ReentrancyGuard {
     mapping (address => uint256) internal stakeStart;
     
     
+    function setSPAddress(address _SP) public onlyOwner {
+        stakePool = _SP;
+    }
+    
+    /**
+    * @notice A method for a stakeholder to create a stake.
+    * @param _SP Address of the Stake Pool.
+    * @param _STKHB Address of the STKHB contract.
+    * @param _stakeMaker The stakeholder to create stakes for.
+    * @param _stake The size of the stake to be created.
+    * STAKE FEE - 0.5% - _stakedAmount includes a permanent burn of 0.5% of the total stake.
+    */
     function createStake(address _SP, address _STKHB, address _stakeMaker, uint256 _stake)
         onlyStakeholder
         public
@@ -1129,8 +1170,8 @@ contract StakingPools is Ownable, ReentrancyGuard {
         StakeHubToken STKHB = StakeHubToken(_STKHB);
         _stake = _stake * 1e18;
         uint256 _stakedAmount;
-        if(stakes[msg.sender] > 0) collectRewards(_SP, _STKHB, _stakeMaker);
-        STKHB.burnStake(_stakeMaker, _stake);
+        if(stakes[msg.sender] > 0) collectRewards(_STKHB, _stakeMaker);
+        STKHB.burnStake(_SP, _stakeMaker, _stake);
         _stakedAmount = _stake - (((_stake * 1e5) - ((_stake*1e5) * (.995 * 1e5) / 1e5)) / 1e5);
         if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
         stakes[msg.sender] = stakes[msg.sender].add(_stakedAmount);
@@ -1138,28 +1179,30 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice A method for a stakeholder to remove a stake.
-     * @param _stakeholder The stakeholder to remove stakes for
-     * @param _stake The size of the stake to be removed.
-     */
-    function removeStake (address _SP, address _STKHB, address _stakeholder, uint256 _stake)
+    * @notice A method for a stakeholder to remove a stake.
+    * @param _STKHB Address of the STKHB contract.
+    * @param _stakeholder The stakeholder to remove stakes for.
+    * @param _stake The size of the stake to be removed.
+    */
+    function removeStake (address _STKHB, address _stakeholder, uint256 _stake)
         onlyStakeholder
         public
     {
         StakeHubToken STKHB = StakeHubToken(_STKHB);
         _stake = _stake * 1e18;
-        collectRewards(_SP, _STKHB, _stakeholder);
+        collectRewards(_STKHB, _stakeholder);
         stakes[msg.sender] = stakes[msg.sender].sub(_stake);
         if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
-        STKHB.mintStakedAmount(_SP);
         if(stakes[msg.sender] == 0) stakeStart[_stakeholder] = 0;
+        STKHB.mintStakedAmount(stakePool, _stakeholder, _stake);
+        
     }
 
     /**
-     * @notice A method to retrieve the stake for a stakeholder.
-     * @param _stakeholder The stakeholder to retrieve the stake for.
-     * @return uint256 The amount of wei staked.
-     */
+    * @notice A method to retrieve the stake for a stakeholder.
+    * @param _stakeholder The stakeholder to retrieve the stake of.
+    * @return uint256 The amount of STKHB staked.
+    */
     function stakeOf(address _stakeholder)
         public
         view
@@ -1169,9 +1212,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice A method to the aggregated stakes from all stakeholders.
-     * @return uint256 The aggregated stakes from all stakeholders.
-     */
+    * @notice A method to the aggregated stakes from all stakeholders.
+    * @return uint256 The aggregated stakes from all stakeholders.
+    */
     function totalStakes()
         public
         view
@@ -1185,9 +1228,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
     
     /**
-     * @notice A method to the aggregated rewards from all stakeholders.
-     * @return uint256 The aggregated rewards from all stakeholders.
-     */
+    * @notice A method to the aggregated rewards from all stakeholders.
+    * @return uint256 The aggregated rewards from all stakeholders.
+    */
     function totalRewards()
         public
         view
@@ -1203,11 +1246,11 @@ contract StakingPools is Ownable, ReentrancyGuard {
     // ---------- STAKEHOLDERS ----------
 
     /**
-     * @notice A method to check if an address is a stakeholder.
-     * @param _address The address to verify.
-     * @return bool, uint256 Whether the address is a stakeholder, 
-     * and if so its position in the stakeholders array.
-     */
+    * @notice A method to check if an address is a stakeholder.
+    * @param _address The address to verify.
+    * @return bool, uint256 Whether the address is a stakeholder, 
+    * and if so its position in the stakeholders array.
+    */
     function isStakeholder(address _address)
         public
         view
@@ -1220,9 +1263,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice A method to add a stakeholder.
-     * @param _stakeholder The stakeholder to add.
-     */
+    * @notice A method to add a stakeholder.
+    * @param _stakeholder The stakeholder to add.
+    */
     function addStakeholder(address _stakeholder)
         public
     {
@@ -1231,9 +1274,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
 
     /**
-     * @notice A method to remove a stakeholder.
-     * @param _stakeholder The stakeholder to remove.
-     */
+    * @notice A method to remove a stakeholder.
+    * @param _stakeholder The stakeholder to remove.
+    */
     function removeStakeholder(address _stakeholder)
         public
     {
@@ -1247,9 +1290,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     // ---------- REWARDS ----------
     
     /**
-     * @notice A method to allow a stakeholder to check their rewards.
-     * @param _stakeholder The stakeholder to check rewards for.
-     */
+    * @notice A method to allow a stakeholder to check their rewards.
+    * @param _stakeholder The stakeholder to check rewards for.
+    */
     function rewardOf(address _stakeholder) 
         public
         view
@@ -1259,9 +1302,9 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
 
     /** 
-     * @notice A simple method that calculates the rewards for each stakeholder.
-     * @param _stakeholder The stakeholder to calculate rewards for.
-     */
+    * @notice A method that calculates the rewards for each stakeholder.
+    * @param _stakeholder The stakeholder to calculate rewards for.
+    */
     function calculateReward(address _stakeholder)
         public
         view
@@ -1274,10 +1317,11 @@ contract StakingPools is Ownable, ReentrancyGuard {
     }
     
     /**
-     * @notice A method to attribute and distrbute rewards
-     * @param _stakeholder The stakeholder to attribute rewards to.
-     */
-    function collectRewards(address _SP, address _STKHB, address _stakeholder)
+    * @notice A method to attribute and distrbute rewards
+    * @param _STKHB Address of the STKHB contract.
+    * @param _stakeholder The stakeholder to attribute rewards to.
+    */
+    function collectRewards(address _STKHB, address _stakeholder)
         public
     {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
@@ -1287,34 +1331,51 @@ contract StakingPools is Ownable, ReentrancyGuard {
             rewards[stakeholder] = rewards[stakeholder].add(reward);
             stakeStart[msg.sender] = block.timestamp;
             rewards[msg.sender] = 0;
-            STKHB.mintRewards(_SP);
+            STKHB.mintRewards(stakePool, _stakeholder, reward);
         }
     }
     
     /**
-     * @notice A method to change the APY of the contract
-     * @param _rewardRate uint256 that defines the apy as calcualted by (_rewardRate *1e3 *2880 *365) = APY
-     */
-    function setRewardRate(address _SP, address _STKHB, uint256 _rewardRate) public onlyOwner returns (uint256) {
+    * @notice A method to change the APY of the contract
+    * @param _STKHB Address of the STKHB contract.
+    * @param _rewardRate uint256 that defines the apy as calcualted by (_rewardRate *1e3 *2880 *365) = APY
+    */
+    function setRewardRate(address _STKHB, uint256 _rewardRate) public onlyOwner returns (uint256) {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
-            collectRewards(_SP, _STKHB, stakeholders[s]);
+            collectRewards(_STKHB, stakeholders[s]);
         }
         return rewardRate = _rewardRate * 1e3;
     }
     
+    /**
+    * @notice A method to change the reward block time.
+    * @param _time uint256 in seconds.
+    */
     function setRewardBlockTime(uint256 _time) public onlyOwner returns (uint256) {
         return rewardBlockTime = _time;
     }
     
-    
+    /**
+    * @notice A modifier to verifiy that a user is a current stakeholder prior to accepting the transaction.
+    * @param _stakeholder Address of the stakeholder. 
+    */
     modifier onlyCurrentStaker(address _stakeholder) {
         require(stakeOf(msg.sender) != 0);
         _;
     }
     
+    /**
+     * @notice A modifier to prevent anyone but the account owner from executing transactions with this modifier.
+     */
     modifier onlyStakeholder() {
         require(msg.sender == msg.sender);
         _;
     }
+}
+
+contract NonBurnVoting is Ownable {
+    using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    
     
 }
