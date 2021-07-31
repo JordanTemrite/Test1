@@ -1159,7 +1159,7 @@ contract STKHBPublicSale is Ownable {
         purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].add(usdc);
     }
     
-    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) {
+    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) withinSaleBlock {
         uint256 refundAmount;
         uint256 STKHBAmount;
         address purchaser;
@@ -1181,6 +1181,14 @@ contract STKHBPublicSale is Ownable {
         purchasedSTKHBAmount[msg.sender] = 0;
         STKHB.safeIncreaseAllowance(_purchaser, purchasedSTKHB);
         STKHB.transfer(_purchaser, purchasedSTKHB);
+    }
+    
+    function withdrawSaleProceeds(address _owner) public onlyOwner saleFinished {
+        USDC.transfer(_owner, totalRaised);
+    }
+    
+    function withdrawRemainingSTKHB(address _owner) public onlyOwner saleFinished {
+        STKHB.transfer(_owner, availableAmount);
     }
     
     modifier onlyPurchaser(address _purchaser) {
@@ -1215,6 +1223,4 @@ contract STKHBPublicSale is Ownable {
         require(block.timestamp >= saleEnd);
         _;
     }
-}    
-    
-    
+} 
