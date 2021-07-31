@@ -1092,9 +1092,9 @@ contract STKHBPublicSale is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
-    address public USDC;
+    IERC20 public USDC;
     
-    address public STKHB;
+    IERC20 public STKHB;
     
     address public thisContract;
     
@@ -1103,32 +1103,30 @@ contract STKHBPublicSale is Ownable {
     uint256 public availableAmount;
     
     uint256 public totalRaised;
-
-    mapping(address => uint256) internal purchasedAmount;
     
-    constructor(uint256 _hardCap, uint256 _maxBuy, address _USDC, address _STKHB) {
+    uint256 public saleEnd;
+
+    mapping(address => uint256) internal purchasedSTKHBAmount;
+    
+    mapping(address => uint256) internal purchasedUSDCAmount;
+    
+    constructor(uint256 _hardCap, uint256 _maxBuy, IERC20 _USDC, IERC20 _STKHB) {
         availableAmount = _hardCap;
         maxBuy = _maxBuy;
         USDC = _USDC;
         STKHB = _STKHB;
     }
     
-    function viewPurchasedAmount(address _purchaser) public view returns(uint256){
-        return purchasedAmount[_purchaser];
+    function viewPersonalUSDC(address _purchaser) public view returns(uint256) {
+        return purchasedUSDCAmount[_purchaser];
     }
     
-    function buySTKHB(address _purchaser, uint256 _USDCAmount) public payable withinSaleAmount(_USDCAmount) {
-        TESTUSDC USDCT = TESTUSDC(USDC);
-        uint256 STKHBBuy;
-        uint256 usdc;
-        address buyer;
-        buyer = _purchaser;
-        usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 1000;
-        availableAmount = availableAmount - STKHBBuy;
-        USDCT.transferFrom(_purchaser, thisContract, usdc);
-        totalRaised = totalRaised + STKHBBuy;
-        purchasedAmount[msg.sender] = purchasedAmount[msg.sender].add(STKHBBuy);
+    function viewPersonalSTKHB(address _purchaser) public view returns(uint256) {
+        return purchasedSTKHBAmount[_purchaser];
+    }
+    
+    function viewTotalRaised() public view returns(uint256) {
+        return totalRaised;
     }
     
     function setOwner(address _contract) public onlyOwner {
@@ -1136,13 +1134,67 @@ contract STKHBPublicSale is Ownable {
     }
     
     function STKHBTotal() public view returns(uint256) {
-        StakeHubToken STKHBT = StakeHubToken(STKHB);
-        return STKHBT.balanceOf(thisContract);
+        return STKHB.balanceOf(thisContract);
     }
     
     function USDCTotal() public view returns(uint256) {
-        TESTUSDC USDCT = TESTUSDC(USDC);
-        return USDCT.balanceOf(thisContract);
+        return USDC.balanceOf(thisContract);
+    }
+    
+    function setSaleEnd(uint256 _time) public onlyOwner {
+        saleEnd = block.timestamp + _time;
+    }
+    
+    function buySTKHB(address _purchaser, uint256 _USDCAmount) public payable withinSaleAmount(_USDCAmount) withinMaxPurchase(_USDCAmount) withinSaleBlock {
+        uint256 STKHBBuy;
+        uint256 usdc;
+        address buyer;
+        buyer = _purchaser;
+        usdc = _USDCAmount * 1e18;
+        STKHBBuy = usdc * 1000;
+        availableAmount = availableAmount - STKHBBuy;
+        USDC.transferFrom(buyer, thisContract, usdc);
+        totalRaised = totalRaised + usdc;
+        purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].add(STKHBBuy);
+        purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].add(usdc);
+    }
+    
+    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) {
+        uint256 refundAmount;
+        uint256 STKHBAmount;
+        address purchaser;
+        purchaser = _purchaser;
+        refundAmount = purchasedUSDCAmount[msg.sender];
+        STKHBAmount = refundAmount * 1000;
+        purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].sub(refundAmount);
+        purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].sub(STKHBAmount);
+        USDC.safeIncreaseAllowance(_purchaser, refundAmount);
+        USDC.transfer(purchaser, refundAmount);
+        USDC.safeDecreaseAllowance(_purchaser, 0);
+        totalRaised = totalRaised - refundAmount;
+        availableAmount = availableAmount + STKHBAmount;
+    }
+    
+    function withdrawPurchasedBalance(address _purchaser) public payable onlyPurchaser(_purchaser) saleFinished {
+        uint256 purchasedSTKHB;
+        purchasedSTKHB = purchasedSTKHBAmount[msg.sender];
+        purchasedSTKHBAmount[msg.sender] = 0;
+        STKHB.safeIncreaseAllowance(_purchaser, purchasedSTKHB);
+        STKHB.transfer(_purchaser, purchasedSTKHB);
+    }
+    
+    modifier onlyPurchaser(address _purchaser) {
+        require(_purchaser == msg.sender);
+        _;
+    }
+    
+    modifier withinMaxPurchase(uint256 _USDCAmount) {
+        uint256 usdc;
+        uint256 STKHBBuy;
+        usdc = _USDCAmount * 1e18;
+        STKHBBuy = usdc * 1000;
+        require((purchasedSTKHBAmount[msg.sender] + STKHBBuy) <= maxBuy);
+        _;
     }
     
     modifier withinSaleAmount(uint256 _USDCAmount) {
@@ -1153,4 +1205,16 @@ contract STKHBPublicSale is Ownable {
         require(STKHBBuy <= availableAmount);
         _;
     }
-}  
+    
+    modifier withinSaleBlock() {
+        require(block.timestamp <= saleEnd);
+        _;
+    }
+    
+    modifier saleFinished() {
+        require(block.timestamp >= saleEnd);
+        _;
+    }
+}    
+    
+    
