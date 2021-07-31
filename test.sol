@@ -1014,125 +1014,136 @@ library SafeERC20 {
     }
 }
 
-/**
- * @dev Contract module that helps prevent reentrant calls to a function.
- *
- * Inheriting from `ReentrancyGuard` will make the {nonReentrant} modifier
- * available, which can be applied to functions to make sure there are no nested
- * (reentrant) calls to them.
- *
- * Note that because there is a single `nonReentrant` guard, functions marked as
- * `nonReentrant` may not call one another. This can be worked around by making
- * those functions `private`, and then adding `external` `nonReentrant` entry
- * points to them.
- *
- * TIP: If you would like to learn more about reentrancy and alternative ways
- * to protect against it, check out our blog post
- * https://blog.openzeppelin.com/reentrancy-after-istanbul/[Reentrancy After Istanbul].
- */
-abstract contract ReentrancyGuard {
-    // Booleans are more expensive than uint256 or any type that takes up a full
-    // word because each write operation emits an extra SLOAD to first read the
-    // slot's contents, replace the bits taken up by the boolean, and then write
-    // back. This is the compiler's defense against contract upgrades and
-    // pointer aliasing, and it cannot be disabled.
-
-    // The values being non-zero value makes deployment a bit more expensive,
-    // but in exchange the refund on every call to nonReentrant will be lower in
-    // amount. Since refunds are capped to a percentage of the total
-    // transaction's gas, it is best to keep them low in cases like this one, to
-    // increase the likelihood of the full refund coming into effect.
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
-
-    uint256 private _status;
-
-    constructor() {
-        _status = _NOT_ENTERED;
-    }
-
-    /**
-     * @dev Prevents a contract from calling itself, directly or indirectly.
-     * Calling a `nonReentrant` function from another `nonReentrant`
-     * function is not supported. It is possible to prevent this from happening
-     * by making the `nonReentrant` function external, and make it call a
-     * `private` function that does the actual work.
-     */
-    modifier nonReentrant() {
-        // On the first call to nonReentrant, _notEntered will be true
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-
-        // Any calls to nonReentrant after this point will fail
-        _status = _ENTERED;
-
-        _;
-
-        // By storing the original value once again, a refund is triggered (see
-        // https://eips.ethereum.org/EIPS/eip-2200)
-        _status = _NOT_ENTERED;
-    }
-}
-
-contract StakeHubToken is ERC20, Ownable, ReentrancyGuard {
+contract StakeHubToken is ERC20, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
- 
+    
+    
+    address[] public approvedBallots;
+    
+    address[] public approvedPools;
+    
+    address[] public stakeholders;
+    
+    mapping(address => uint256) public stakeholderTotals;
+    
+    
+    
     /**
-     * @notice Creates STKHB
-     * @param _owner Sets the owner wallet address 
-     * @param _supply Sets the initial supply of STKHB (Uses 18 decimal places).
-     */
+    * @notice Creates STKHB
+    * @param _owner Sets the owner wallet address 
+    * @param _supply Sets the initial supply of STKHB (Uses 18 decimal places).
+    */
     constructor(address _owner, uint256 _supply) 
-        public ERC20 ("test", "test")
+        ERC20 ("test", "test")
     { 
         _mint(_owner, _supply);
     }
-
     
-    /**
-     * @notice A method to burn newly staked amounts which can be reminted upon removing the stake.
-     * @param _SP Address of the Stake Pool.
-     * @param _stakeMaker Address of the user creating the stake.
-     * @param _stake The size of the stake to be added.
-     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
-     */
-    function burnStake(address _SP, address _stakeMaker, uint256 _stake) external onlyStakePoolCall(_SP) {
-         _burn(_stakeMaker, _stake);
+    function approvePool(address _SP) public onlyOwner {
+        approvedPools.push(_SP);
+    }
+    
+    function approveBallot(address _VB) public onlyOwner {
+        approvedBallots.push(_VB);
+    }
+    
+    function returnStakeholders() public view returns(address) {
+        for(uint256 s = 0; s < stakeholders.length; s += 1) {
+            return stakeholders[s];
+        }
+    }
+    
+    function addStakeholder(address _SP, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) isNewStakeholder(_stakeholder) {
+        stakeholders.push(_stakeholder);
+    }
+    
+    function viewStakeholderTotals(address _stakeholder) external view returns(uint256) {
+        return stakeholderTotals[_stakeholder];
+    }
+
+    function addStakeholderTotals(address _SP, uint256 _newStakeAmount, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        stakeholderTotals[_stakeholder] = stakeholderTotals[_stakeholder].add(_newStakeAmount);
+    }
+    
+    function removeStakeholderTotals(address _SP, uint256 _stakeRemovalAmount, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        stakeholderTotals[_stakeholder] = stakeholderTotals[_stakeholder].sub(_stakeRemovalAmount);
     }
     
     /**
-     * @notice A method to mint staked amounts when removing stakes.
-     * @param _SP Address of the Stake Pool.
-     * @param _stakeholder Address of the user removing the stake.
-     * @param _stake The size of the stake to be removed.
-     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
-     */
-    function mintStakedAmount(address _SP, address _stakeholder, uint256 _stake) external onlyStakePoolCall(_SP) {
+    * @notice A method to burn newly staked amounts which can be reminted upon removing the stake.
+    * @param _SP Address of the Stake Pool.
+    * @param _stakeMaker Address of the user creating the stake.
+    * @param _stake The size of the stake to be added.
+    * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+    */
+    function burnStake(address _SP, address _stakeMaker, uint256 _stake) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+         _burn(_stakeMaker, _stake);
+    }
+    
+    function burnVote(address _VB, address _voter, uint256 _vote) external onlyVoteBallotCall(_VB) isApprovedBallot(_VB) {
+        _burn(_voter, _vote);
+    }
+    
+    /**
+    * @notice A method to mint staked amounts when removing stakes.
+    * @param _SP Address of the Stake Pool.
+    * @param _stakeholder Address of the user removing the stake.
+    * @param _stake The size of the stake to be removed.
+    * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+    */
+    function mintStakedAmount(address _SP, address _stakeholder, uint256 _stake) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
         _mint(_stakeholder, _stake);
     }
     
     /**
-     * @notice A method to mint rewards from a current stake.
-     * @param _SP Address of the Stake Pool.
-     * @param _stakeholder Address of the user requesting rewards collection.
-     * @param _rewards The reward total to be collected.
-     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
-     */
-    function mintRewards(address _SP, address _stakeholder, uint256 _rewards) external onlyStakePoolCall(_SP) {
+    * @notice A method to mint rewards from a current stake.
+    * @param _SP Address of the Stake Pool.
+    * @param _stakeholder Address of the user requesting rewards collection.
+    * @param _rewards The reward total to be collected.
+    * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+    */
+    function mintRewards(address _SP, address _stakeholder, uint256 _rewards) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
         _mint(_stakeholder, _rewards);
     }
     
     /**
-     * @notice onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
-     */
+    * @notice onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
+    */
     modifier onlyStakePoolCall(address _SP) {
         require(msg.sender == _SP);
         _;
     }
     
+    modifier isNewStakeholder(address _stakeholder) {
+        for(uint256 s = 0; s < stakeholders.length; s += 1) {
+            require(stakeholders[s] != _stakeholder);
+            _;
+        }
+    }
+    
+    modifier isApprovedPool(address _SP) {
+        for(uint256 s = 0; s < approvedPools.length; s += 1) {
+            require(approvedPools[s] == _SP);
+            _;
+        }
+    }
+    
+    modifier isApprovedBallot(address _VB) {
+        for(uint256 s = 0; s < approvedBallots.length; s += 1) {
+            require(approvedBallots[s] == _VB);
+            _;
+        }
+    }
+    
+    modifier onlyVoteBallotCall(address _VB) {
+        require(msg.sender == _VB);
+        _;
+    }
+    
 }
 
-contract StakingPools is Ownable, ReentrancyGuard {
+contract StakingPools is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
@@ -1144,7 +1155,7 @@ contract StakingPools is Ownable, ReentrancyGuard {
     
     address[] internal stakeholders;
 
-    mapping(address => uint256) internal stakes;
+    mapping(address => uint256) public stakes;
 
     mapping(address => uint256) internal rewards;
     
@@ -1157,44 +1168,44 @@ contract StakingPools is Ownable, ReentrancyGuard {
     
     /**
     * @notice A method for a stakeholder to create a stake.
-    * @param _SP Address of the Stake Pool.
     * @param _STKHB Address of the STKHB contract.
     * @param _stakeMaker The stakeholder to create stakes for.
     * @param _stake The size of the stake to be created.
     * STAKE FEE - 0.5% - _stakedAmount includes a permanent burn of 0.5% of the total stake.
     */
-    function createStake(address _SP, address _STKHB, address _stakeMaker, uint256 _stake)
-        onlyStakeholder
+    function createStake(address _STKHB, address _stakeMaker, uint256 _stake)
+        onlyStakeholder(_stakeMaker)
         public
     {
         StakeHubToken STKHB = StakeHubToken(_STKHB);
         _stake = _stake * 1e18;
         uint256 _stakedAmount;
-        if(stakes[msg.sender] > 0) collectRewards(_STKHB, _stakeMaker);
-        STKHB.burnStake(_SP, _stakeMaker, _stake);
-        _stakedAmount = _stake - (((_stake * 1e5) - ((_stake*1e5) * (.995 * 1e5) / 1e5)) / 1e5);
+        if(stakes[msg.sender] > 0) collectRewards(_STKHB, msg.sender);
+        STKHB.burnStake(stakePool, _stakeMaker, _stake);
+        _stakedAmount = _stake - (((_stake * 1e5) - ((_stake * 1e5) * (.995 * 1e5) / 1e5)) / 1e5);
         if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
         stakes[msg.sender] = stakes[msg.sender].add(_stakedAmount);
-        stakeStart[_stakeMaker] = block.timestamp;
+        STKHB.addStakeholderTotals(stakePool, _stakedAmount, _stakeMaker);
+        stakeStart[msg.sender] = block.timestamp;
     }
 
     /**
     * @notice A method for a stakeholder to remove a stake.
     * @param _STKHB Address of the STKHB contract.
-    * @param _stakeholder The stakeholder to remove stakes for.
     * @param _stake The size of the stake to be removed.
     */
-    function removeStake (address _STKHB, address _stakeholder, uint256 _stake)
-        onlyStakeholder
+    function removeStake (address _STKHB, address _stakeMaker, uint256 _stake)
+        onlyStakeholder(_stakeMaker)
         public
     {
         StakeHubToken STKHB = StakeHubToken(_STKHB);
         _stake = _stake * 1e18;
-        collectRewards(_STKHB, _stakeholder);
+        collectRewards(_STKHB, msg.sender);
         stakes[msg.sender] = stakes[msg.sender].sub(_stake);
+        STKHB.removeStakeholderTotals(stakePool, _stake, _stakeMaker);
         if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
-        if(stakes[msg.sender] == 0) stakeStart[_stakeholder] = 0;
-        STKHB.mintStakedAmount(stakePool, _stakeholder, _stake);
+        if(stakes[msg.sender] == 0) stakeStart[msg.sender] = 0;
+        STKHB.mintStakedAmount(stakePool, _stakeMaker, _stake);
         
     }
 
@@ -1329,8 +1340,8 @@ contract StakingPools is Ownable, ReentrancyGuard {
             address stakeholder = _stakeholder;
             uint256 reward = calculateReward(stakeholder);
             rewards[stakeholder] = rewards[stakeholder].add(reward);
-            stakeStart[msg.sender] = block.timestamp;
-            rewards[msg.sender] = 0;
+            stakeStart[_stakeholder] = block.timestamp;
+            rewards[_stakeholder] = 0;
             STKHB.mintRewards(stakePool, _stakeholder, reward);
         }
     }
@@ -1367,15 +1378,160 @@ contract StakingPools is Ownable, ReentrancyGuard {
     /**
      * @notice A modifier to prevent anyone but the account owner from executing transactions with this modifier.
      */
-    modifier onlyStakeholder() {
-        require(msg.sender == msg.sender);
+    modifier onlyStakeholder(address _stakeMaker) {
+        require(_stakeMaker == msg.sender);
         _;
     }
 }
 
-contract NonBurnVoting is Ownable {
+contract Voting is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
+    address public stkhb;
     
+    address public thisContract;
+    
+    address[] stakeholders;
+    
+    //uint256 for nonburn voting //
+    uint256 public nonburnYesVoteAmount;
+    uint256 public nonburnNoVoteAmount;
+    uint256 public nonburnVotingBlockEnd;
+    
+    //uuint256 for burn voting //
+    uint256 public votingBlockEnd;
+    uint256 public yesVoteAmount;
+    uint256 public noVoteAmount;
+    uint256 public minimumVoteAmount;
+    
+    mapping (address => uint256) internal voterStatus;
+    
+    constructor(address _STKHB) {
+        stkhb = _STKHB;
+    }
+    
+    function populateStakeholders() public {
+        address[] newStakeholders;
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        newStakeholders.push(STKHB.returnStakeholders);
+    }
+    
+    function setThisContract(address _contract) public onlyOwner {
+        thisContract = _contract;
+    }
+    
+     // ---------- VOTING THAT BURNS STKHB ----------
+    //For all functions below STKHB will be permanently burned
+    
+    /**
+     * @notice A method to start a voting period for burnable votes & reset previous vote tallys
+     */
+    function setVotingPeriod(uint256 _time) public onlyOwner {
+        votingBlockEnd = block.timestamp + _time;
+        yesVoteAmount = 0;
+        noVoteAmount = 0;
+    }
+     
+    /**
+     * @notice A method to vote yes and burn the amount voted
+     * @param _voteAmount Defines the number of tokens to burn
+     */ 
+    function voteYes(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) returns(uint256) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 voteAmount = _voteAmount;
+        STKHB.burnVote(thisContract, msg.sender, voteAmount);
+        return yesVoteAmount = yesVoteAmount + voteAmount;
+    }
+     
+    /**
+     * @notice A method to vote no and burn the amount voted
+     * @param _voteAmount Defines the number of tokens to burn
+     */ 
+    function voteNo(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) returns(uint256) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 voteAmount = _voteAmount;
+        STKHB.burnVote(thisContract, msg.sender, voteAmount);
+        return noVoteAmount = noVoteAmount + voteAmount;
+    }
+    
+    /**
+     * @notice A method to set the minimum number of tokens allowed to participate in a vote
+     * @param _setVoteAmount Defines the minimum number of tokens allowed
+     */  
+    function setMinimumVoteAmount(uint256 _setVoteAmount) public onlyOwner {
+        minimumVoteAmount = _setVoteAmount * 1e18;
+    }
+    
+    /**
+     * @notice A method to only allow vote submission during the alloted voting time
+     */ 
+    modifier inBlockperiod() {
+        require(block.timestamp < votingBlockEnd);
+        _;
+    }
+    
+    /**
+     * @notice A method to only allow vote amounts to meet or exceed the minimum vote amount
+     */ 
+    modifier checkVoteAmount(uint256 _voteAmount) {
+        require(_voteAmount >= (minimumVoteAmount));
+        _;
+    }
+    
+    
+    // ---------- VOTING THAT DOES NOT BURN STKHB ----------
+    //For all functions below STKHB will be permanently burned\
+    
+    /**
+     * @notice A method to start a voting period for non burable votes - Resets previous vote blockers and resets preivous vote amounts
+     * @param _time Defines the amount of time (in seconds) that the vote will be open
+     */ 
+    function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        nonburnVotingBlockEnd = block.timestamp + _time;
+        voterStatus[stakeholders[STKHB.returnStakeholders]] = 0;
+        nonburnYesVoteAmount = 0;
+        nonburnNoVoteAmount = 0;
+    }
+    
+    /**
+     * @notice A method to vote yes based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteYesAmount;
+        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals[_stakeholder];
+        nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
+        voterStatus[msg.sender] = 1;
+    }
+    
+    /**
+     * @notice A method to vote no based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteNoAmount;
+        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals[_stakeholder];
+        nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
+        voterStatus[msg.sender] = 1;
+    }
+    
+    /**
+     * @notice A method to only allow voting during the defined block period
+     */ 
+    modifier inNonburnBlockperiod() {
+        require(block.timestamp < nonburnVotingBlockEnd);
+        _;
+    }
+    
+    /**
+     * @notice A method to only allow an address to vote once
+     */ 
+    modifier checkVoteStatus() {
+        require(voterStatus[msg.sender] != 1);
+        _;
+    }
 }
