@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity 0.8.6;
 
 /**
  * @dev Interface of the ERC20 standard as defined in the EIP.
@@ -1135,6 +1135,8 @@ contract StakingPools is Ownable {
     
     address public stakePool;
     
+    address public SHF;
+    
     address[] internal stakeholders;
 
     mapping(address => uint256) public stakes;
@@ -1144,25 +1146,28 @@ contract StakingPools is Ownable {
     mapping (address => uint256) internal stakeStart;
     
     
+    constructor(address _STKHB) {
+        SHF = _STKHB;
+    }
+    
     function setSPAddress(address _SP) public onlyOwner {
         stakePool = _SP;
     }
     
     /**
     * @notice A method for a stakeholder to create a stake.
-    * @param _STKHB Address of the STKHB contract.
     * @param _stakeMaker The stakeholder to create stakes for.
     * @param _stake The size of the stake to be created.
     * STAKE FEE - 0.5% - _stakedAmount includes a permanent burn of 0.5% of the total stake.
     */
-    function createStake(address _STKHB, address _stakeMaker, uint256 _stake)
+    function createStake(address _stakeMaker, uint256 _stake)
         onlyStakeholder(_stakeMaker)
         public
     {
-        StakeHubToken STKHB = StakeHubToken(_STKHB);
+        StakeHubToken STKHB = StakeHubToken(SHF);
         _stake = _stake * 1e18;
         uint256 _stakedAmount;
-        if(stakes[msg.sender] > 0) collectRewards(_STKHB, msg.sender);
+        if(stakes[msg.sender] > 0) collectRewards(msg.sender);
         STKHB.burnStake(stakePool, _stakeMaker, _stake);
         _stakedAmount = _stake - (((_stake * 1e5) - ((_stake * 1e5) * (.995 * 1e5) / 1e5)) / 1e5);
         if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
@@ -1173,17 +1178,16 @@ contract StakingPools is Ownable {
 
     /**
     * @notice A method for a stakeholder to remove a stake.
-    * @param _STKHB Address of the STKHB contract.
     * @param _stake The size of the stake to be removed.
     */
-    function removeStake (address _STKHB, address _stakeMaker, uint256 _stake)
+    function removeStake (address _stakeMaker, uint256 _stake)
         onlyStakeholder(_stakeMaker)
         validRemovalAmount(_stake)
         public
     {
-        StakeHubToken STKHB = StakeHubToken(_STKHB);
+        StakeHubToken STKHB = StakeHubToken(SHF);
         _stake = _stake * 1e18;
-        collectRewards(_STKHB, msg.sender);
+        collectRewards(msg.sender);
         stakes[msg.sender] = stakes[msg.sender].sub(_stake);
         STKHB.removeStakeholderTotals(stakePool, _stake, _stakeMaker);
         if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
@@ -1192,9 +1196,9 @@ contract StakingPools is Ownable {
         
     }
     
-    function removeFullStake(address _STKHB, address _stakeMaker) public onlyStakeholder(_stakeMaker) {
-        StakeHubToken STKHB = StakeHubToken(_STKHB);
-        collectRewards(_STKHB, msg.sender);
+    function removeFullStake(address _stakeMaker) public onlyStakeholder(_stakeMaker) {
+        StakeHubToken STKHB = StakeHubToken(SHF);
+        collectRewards(msg.sender);
         uint256 removalAmount;
         removalAmount = stakes[msg.sender];
         stakes[msg.sender] = 0;
@@ -1323,14 +1327,13 @@ contract StakingPools is Ownable {
     
     /**
     * @notice A method to attribute and distrbute rewards
-    * @param _STKHB Address of the STKHB contract.
     * @param _stakeholder The stakeholder to attribute rewards to.
     */
-    function collectRewards(address _STKHB, address _stakeholder)
+    function collectRewards(address _stakeholder)
         public
     {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
-            StakeHubToken STKHB = StakeHubToken(_STKHB);
+            StakeHubToken STKHB = StakeHubToken(SHF);
             address stakeholder = _stakeholder;
             uint256 reward = calculateReward(stakeholder);
             rewards[stakeholder] = rewards[stakeholder].add(reward);
@@ -1342,12 +1345,11 @@ contract StakingPools is Ownable {
     
     /**
     * @notice A method to change the APY of the contract
-    * @param _STKHB Address of the STKHB contract.
     * @param _rewardRate uint256 that defines the apy as calcualted by (_rewardRate *1e3 *2880 *365) = APY
     */
-    function setRewardRate(address _STKHB, uint256 _rewardRate) public onlyOwner returns (uint256) {
+    function setRewardRate(uint256 _rewardRate) public onlyOwner returns (uint256) {
         for (uint256 s = 0; s < stakeholders.length; s += 1){
-            collectRewards(_STKHB, stakeholders[s]);
+            collectRewards(stakeholders[s]);
         }
         return rewardRate = _rewardRate * 1e3;
     }
@@ -1385,11 +1387,9 @@ contract StakingPools is Ownable {
     }
 }
 
-contract Voting is Ownable {
+contract NonburnVoting is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
-    
-    address[] public voters;
     
     address public stkhb;
     
@@ -1400,12 +1400,6 @@ contract Voting is Ownable {
     uint256 public nonburnNoVoteAmount;
     uint256 public nonburnVotingBlockEnd;
     
-    //uuint256 for burn voting //
-    uint256 public votingBlockEnd;
-    uint256 public yesVoteAmount;
-    uint256 public noVoteAmount;
-    uint256 public minimumVoteAmount;
-    
     mapping (address => uint256) internal voterStatus;
     
     constructor(address _STKHB) {
@@ -1415,7 +1409,89 @@ contract Voting is Ownable {
     function setThisContract(address _contract) public onlyOwner {
         thisContract = _contract;
     }
+
+    // ---------- VOTING THAT DOES NOT BURN STKHB ----------
+    //For all functions below STKHB will be permanently burned\
     
+    /**
+     * @notice A method to start a voting period for non burable votes - Resets previous vote blockers and resets preivous vote amounts
+     * @param _time Defines the amount of time (in seconds) that the vote will be open
+     */ 
+    function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
+        nonburnVotingBlockEnd = block.timestamp + _time;
+        nonburnYesVoteAmount = 0;
+        nonburnNoVoteAmount = 0;
+    }
+    
+    /**
+     * @notice A method to vote yes based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod onlyCurrentStaker(_stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteYesAmount;
+        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals(_stakeholder);
+        nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
+        voterStatus[msg.sender] = 1;
+    }
+    
+    /**
+     * @notice A method to vote no based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() onlyCurrentStaker(_stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteNoAmount;
+        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals(_stakeholder);
+        nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
+        voterStatus[msg.sender] = 1;
+    }
+    
+    /**
+     * @notice A method to only allow voting during the defined block period
+     */ 
+    modifier inNonburnBlockperiod() {
+        require(block.timestamp < nonburnVotingBlockEnd);
+        _;
+    }
+    
+    /**
+     * @notice A method to only allow an address to vote once
+     */ 
+    modifier checkVoteStatus() {
+        require(voterStatus[msg.sender] != 1);
+        _;
+    }
+    
+    modifier onlyCurrentStaker(address _stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        require(STKHB.viewStakeholderTotals(_stakeholder) > 0);
+        _;
+    }
+}
+
+contract BurnVoting is Ownable {
+     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    
+    address public stkhb;
+    
+    address public thisContract;
+    
+    //uint256 for burn voting //
+    uint256 public votingBlockEnd;
+    uint256 public yesVoteAmount;
+    uint256 public noVoteAmount;
+    uint256 public minimumVoteAmount;
+    
+    constructor(address _STKHB) {
+        stkhb = _STKHB;
+    }
+    
+    function setThisContract(address _contract) public onlyOwner {
+        thisContract = _contract;
+    }
+
      // ---------- VOTING THAT BURNS STKHB ----------
     //For all functions below STKHB will be permanently burned
     
@@ -1471,69 +1547,6 @@ contract Voting is Ownable {
      */ 
     modifier checkVoteAmount(uint256 _voteAmount) {
         require(_voteAmount >= (minimumVoteAmount));
-        _;
-    }
-    
-    
-    // ---------- VOTING THAT DOES NOT BURN STKHB ----------
-    //For all functions below STKHB will be permanently burned\
-    
-    /**
-     * @notice A method to start a voting period for non burable votes - Resets previous vote blockers and resets preivous vote amounts
-     * @param _time Defines the amount of time (in seconds) that the vote will be open
-     */ 
-    function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
-        nonburnVotingBlockEnd = block.timestamp + _time;
-        for (uint256 s = 0; s < voters.length; s += 1){
-            voterStatus[voters[s]] = 0;
-        }
-        nonburnYesVoteAmount = 0;
-        nonburnNoVoteAmount = 0;
-    }
-    
-    /**
-     * @notice A method to vote yes based on your total stakeholdings
-     * @param _stakeholder Defines the address submitting the vote
-     */ 
-    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod onlyCurrentStaker(_stakeholder) {
-        StakeHubToken STKHB = StakeHubToken(stkhb);
-        uint256 _nonburnVoteYesAmount;
-        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals(_stakeholder);
-        nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
-        voterStatus[msg.sender] = 1;
-    }
-    
-    /**
-     * @notice A method to vote no based on your total stakeholdings
-     * @param _stakeholder Defines the address submitting the vote
-     */ 
-    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() onlyCurrentStaker(_stakeholder) {
-        StakeHubToken STKHB = StakeHubToken(stkhb);
-        uint256 _nonburnVoteNoAmount;
-        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals(_stakeholder);
-        nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
-        voterStatus[msg.sender] = 1;
-    }
-    
-    /**
-     * @notice A method to only allow voting during the defined block period
-     */ 
-    modifier inNonburnBlockperiod() {
-        require(block.timestamp < nonburnVotingBlockEnd);
-        _;
-    }
-    
-    /**
-     * @notice A method to only allow an address to vote once
-     */ 
-    modifier checkVoteStatus() {
-        require(voterStatus[msg.sender] != 1);
-        _;
-    }
-    
-    modifier onlyCurrentStaker(address _stakeholder) {
-        StakeHubToken STKHB = StakeHubToken(stkhb);
-        require(STKHB.viewStakeholderTotals(_stakeholder) > 0);
         _;
     }
 }
