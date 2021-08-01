@@ -1040,18 +1040,19 @@ contract StakeHubToken is ERC20, Ownable {
         _mint(_owner, _supply);
     }
     
+    function isStakeholder(address _stakeholder) public view returns(bool) {
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            if (_stakeholder == stakeholders[s]) return true;
+        }
+        return false;
+    }
+    
     function approvePool(address _SP) public onlyOwner {
         approvedPools.push(_SP);
     }
     
     function approveBallot(address _VB) public onlyOwner {
         approvedBallots.push(_VB);
-    }
-    
-    function returnStakeholders() public view returns(address) {
-        for(uint256 s = 0; s < stakeholders.length; s += 1) {
-            return stakeholders[s];
-        }
     }
     
     function addStakeholder(address _SP, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) isNewStakeholder(_stakeholder) {
@@ -1388,11 +1389,11 @@ contract Voting is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
+    address[] public voters;
+    
     address public stkhb;
     
     address public thisContract;
-    
-    address[] stakeholders;
     
     //uint256 for nonburn voting //
     uint256 public nonburnYesVoteAmount;
@@ -1409,12 +1410,6 @@ contract Voting is Ownable {
     
     constructor(address _STKHB) {
         stkhb = _STKHB;
-    }
-    
-    function populateStakeholders() public {
-        address[] newStakeholders;
-        StakeHubToken STKHB = StakeHubToken(stkhb);
-        newStakeholders.push(STKHB.returnStakeholders);
     }
     
     function setThisContract(address _contract) public onlyOwner {
@@ -1488,9 +1483,10 @@ contract Voting is Ownable {
      * @param _time Defines the amount of time (in seconds) that the vote will be open
      */ 
     function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
-        StakeHubToken STKHB = StakeHubToken(stkhb);
         nonburnVotingBlockEnd = block.timestamp + _time;
-        voterStatus[stakeholders[STKHB.returnStakeholders]] = 0;
+        for (uint256 s = 0; s < voters.length; s += 1){
+            voterStatus[voters[s]] = 0;
+        }
         nonburnYesVoteAmount = 0;
         nonburnNoVoteAmount = 0;
     }
@@ -1499,10 +1495,10 @@ contract Voting is Ownable {
      * @notice A method to vote yes based on your total stakeholdings
      * @param _stakeholder Defines the address submitting the vote
      */ 
-    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod {
+    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod onlyCurrentStaker(_stakeholder) {
         StakeHubToken STKHB = StakeHubToken(stkhb);
         uint256 _nonburnVoteYesAmount;
-        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals[_stakeholder];
+        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals(_stakeholder);
         nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
         voterStatus[msg.sender] = 1;
     }
@@ -1511,10 +1507,10 @@ contract Voting is Ownable {
      * @notice A method to vote no based on your total stakeholdings
      * @param _stakeholder Defines the address submitting the vote
      */ 
-    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() {
+    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() onlyCurrentStaker(_stakeholder) {
         StakeHubToken STKHB = StakeHubToken(stkhb);
         uint256 _nonburnVoteNoAmount;
-        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals[_stakeholder];
+        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals(_stakeholder);
         nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
         voterStatus[msg.sender] = 1;
     }
@@ -1534,4 +1530,11 @@ contract Voting is Ownable {
         require(voterStatus[msg.sender] != 1);
         _;
     }
+    
+    modifier onlyCurrentStaker(address _stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        require(STKHB.viewStakeholderTotals(_stakeholder) > 0);
+        _;
+    }
+    
 }
