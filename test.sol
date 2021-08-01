@@ -1023,8 +1023,6 @@ contract StakeHubToken is ERC20, Ownable {
     
     address[] public approvedPools;
     
-    address[] public stakeholders;
-    
     mapping(address => uint256) public stakeholderTotals;
     
     
@@ -1040,13 +1038,6 @@ contract StakeHubToken is ERC20, Ownable {
         _mint(_owner, _supply);
     }
     
-    function isStakeholder(address _stakeholder) public view returns(bool) {
-        for (uint256 s = 0; s < stakeholders.length; s += 1){
-            if (_stakeholder == stakeholders[s]) return true;
-        }
-        return false;
-    }
-    
     function approvePool(address _SP) public onlyOwner {
         approvedPools.push(_SP);
     }
@@ -1055,9 +1046,6 @@ contract StakeHubToken is ERC20, Ownable {
         approvedBallots.push(_VB);
     }
     
-    function addStakeholder(address _SP, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) isNewStakeholder(_stakeholder) {
-        stakeholders.push(_stakeholder);
-    }
     
     function viewStakeholderTotals(address _stakeholder) external view returns(uint256) {
         return stakeholderTotals[_stakeholder];
@@ -1114,13 +1102,6 @@ contract StakeHubToken is ERC20, Ownable {
     modifier onlyStakePoolCall(address _SP) {
         require(msg.sender == _SP);
         _;
-    }
-    
-    modifier isNewStakeholder(address _stakeholder) {
-        for(uint256 s = 0; s < stakeholders.length; s += 1) {
-            require(stakeholders[s] != _stakeholder);
-            _;
-        }
     }
     
     modifier isApprovedPool(address _SP) {
@@ -1197,6 +1178,7 @@ contract StakingPools is Ownable {
     */
     function removeStake (address _STKHB, address _stakeMaker, uint256 _stake)
         onlyStakeholder(_stakeMaker)
+        validRemovalAmount(_stake)
         public
     {
         StakeHubToken STKHB = StakeHubToken(_STKHB);
@@ -1208,6 +1190,17 @@ contract StakingPools is Ownable {
         if(stakes[msg.sender] == 0) stakeStart[msg.sender] = 0;
         STKHB.mintStakedAmount(stakePool, _stakeMaker, _stake);
         
+    }
+    
+    function removeFullStake(address _STKHB, address _stakeMaker) public onlyStakeholder(_stakeMaker) {
+        StakeHubToken STKHB = StakeHubToken(_STKHB);
+        collectRewards(_STKHB, msg.sender);
+        uint256 removalAmount;
+        removalAmount = stakes[msg.sender];
+        stakes[msg.sender] = 0;
+        STKHB.removeStakeholderTotals(stakePool, removalAmount, _stakeMaker);
+        removeStakeholder(msg.sender);
+        STKHB.mintStakedAmount(stakePool, _stakeMaker, removalAmount);
     }
 
     /**
@@ -1376,6 +1369,13 @@ contract StakingPools is Ownable {
         _;
     }
     
+    modifier validRemovalAmount(uint256 _stake) {
+        uint256 stake;
+        stake = _stake * 1e18;
+        require(stakes[msg.sender] >= stake);
+        _;
+    }
+    
     /**
      * @notice A modifier to prevent anyone but the account owner from executing transactions with this modifier.
      */
@@ -1536,5 +1536,4 @@ contract Voting is Ownable {
         require(STKHB.viewStakeholderTotals(_stakeholder) > 0);
         _;
     }
-    
 }
