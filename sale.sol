@@ -1129,6 +1129,10 @@ contract STKHBPublicSale is Ownable {
         return totalRaised;
     }
     
+    function viewRemainingPurchaseBalance() public view returns(uint256) {
+        return maxBuy - purchasedSTKHBAmount[msg.sender];
+    }
+    
     function setOwner(address _contract) public onlyOwner {
         thisContract = _contract;
     }
@@ -1151,7 +1155,7 @@ contract STKHBPublicSale is Ownable {
         address buyer;
         buyer = _purchaser;
         usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 1000;
+        STKHBBuy = usdc * 100;
         availableAmount = availableAmount - STKHBBuy;
         USDC.transferFrom(buyer, thisContract, usdc);
         totalRaised = totalRaised + usdc;
@@ -1165,7 +1169,7 @@ contract STKHBPublicSale is Ownable {
         address purchaser;
         purchaser = _purchaser;
         refundAmount = purchasedUSDCAmount[msg.sender];
-        STKHBAmount = refundAmount * 1000;
+        STKHBAmount = refundAmount * 100;
         purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].sub(refundAmount);
         purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].sub(STKHBAmount);
         USDC.safeIncreaseAllowance(_purchaser, refundAmount);
@@ -1200,7 +1204,7 @@ contract STKHBPublicSale is Ownable {
         uint256 usdc;
         uint256 STKHBBuy;
         usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 1000;
+        STKHBBuy = usdc * 100;
         require((purchasedSTKHBAmount[msg.sender] + STKHBBuy) <= maxBuy);
         _;
     }
@@ -1209,7 +1213,7 @@ contract STKHBPublicSale is Ownable {
         uint256 usdc;
         uint256 STKHBBuy;
         usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 1000;
+        STKHBBuy = usdc * 100;
         require(STKHBBuy <= availableAmount);
         _;
     }
@@ -1223,6 +1227,4 @@ contract STKHBPublicSale is Ownable {
         require(block.timestamp >= saleEnd);
         _;
     }
-}    
-    
-    
+}  
