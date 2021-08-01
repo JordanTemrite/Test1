@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 
-pragma solidity ^0.8.0;
+pragma solidity 0.8.6;
 
 interface IERC20 {
     /**
@@ -1033,6 +1033,15 @@ contract StakeHubToken is ERC20, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
+    
+    address[] public approvedBallots;
+    
+    address[] public approvedPools;
+    
+    mapping(address => uint256) public stakeholderTotals;
+    
+    
+    
     /**
     * @notice Creates STKHB
     * @param _owner Sets the owner wallet address 
@@ -1043,7 +1052,27 @@ contract StakeHubToken is ERC20, Ownable {
     { 
         _mint(_owner, _supply);
     }
+    
+    function approvePool(address _SP) public onlyOwner {
+        approvedPools.push(_SP);
+    }
+    
+    function approveBallot(address _VB) public onlyOwner {
+        approvedBallots.push(_VB);
+    }
+    
+    
+    function viewStakeholderTotals(address _stakeholder) external view returns(uint256) {
+        return stakeholderTotals[_stakeholder];
+    }
 
+    function addStakeholderTotals(address _SP, uint256 _newStakeAmount, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        stakeholderTotals[_stakeholder] = stakeholderTotals[_stakeholder].add(_newStakeAmount);
+    }
+    
+    function removeStakeholderTotals(address _SP, uint256 _stakeRemovalAmount, address _stakeholder) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        stakeholderTotals[_stakeholder] = stakeholderTotals[_stakeholder].sub(_stakeRemovalAmount);
+    }
     
     /**
     * @notice A method to burn newly staked amounts which can be reminted upon removing the stake.
@@ -1052,8 +1081,12 @@ contract StakeHubToken is ERC20, Ownable {
     * @param _stake The size of the stake to be added.
     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
     */
-    function burnStake(address _SP, address _stakeMaker, uint256 _stake) external onlyStakePoolCall(_SP) {
+    function burnStake(address _SP, address _stakeMaker, uint256 _stake) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
          _burn(_stakeMaker, _stake);
+    }
+    
+    function burnVote(address _VB, address _voter, uint256 _vote) external onlyVoteBallotCall(_VB) isApprovedBallot(_VB) {
+        _burn(_voter, _vote);
     }
     
     /**
@@ -1063,7 +1096,7 @@ contract StakeHubToken is ERC20, Ownable {
     * @param _stake The size of the stake to be removed.
     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
     */
-    function mintStakedAmount(address _SP, address _stakeholder, uint256 _stake) external onlyStakePoolCall(_SP) {
+    function mintStakedAmount(address _SP, address _stakeholder, uint256 _stake) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
         _mint(_stakeholder, _stake);
     }
     
@@ -1074,7 +1107,7 @@ contract StakeHubToken is ERC20, Ownable {
     * @param _rewards The reward total to be collected.
     * Modifier -  onlyStakePoolCall(_SP) - requires that the message be sent from a stake pool function and does not allow this function to be called anywhere else.
     */
-    function mintRewards(address _SP, address _stakeholder, uint256 _rewards) external onlyStakePoolCall(_SP) {
+    function mintRewards(address _SP, address _stakeholder, uint256 _rewards) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
         _mint(_stakeholder, _rewards);
     }
     
@@ -1083,6 +1116,25 @@ contract StakeHubToken is ERC20, Ownable {
     */
     modifier onlyStakePoolCall(address _SP) {
         require(msg.sender == _SP);
+        _;
+    }
+    
+    modifier isApprovedPool(address _SP) {
+        for(uint256 s = 0; s < approvedPools.length; s += 1) {
+            require(approvedPools[s] == _SP);
+            _;
+        }
+    }
+    
+    modifier isApprovedBallot(address _VB) {
+        for(uint256 s = 0; s < approvedBallots.length; s += 1) {
+            require(approvedBallots[s] == _VB);
+            _;
+        }
+    }
+    
+    modifier onlyVoteBallotCall(address _VB) {
+        require(msg.sender == _VB);
         _;
     }
     
@@ -1154,8 +1206,8 @@ contract STKHBPublicSale is Ownable {
         uint256 usdc;
         address buyer;
         buyer = _purchaser;
-        usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 100;
+        usdc = _USDCAmount.mul(1e18);
+        STKHBBuy = usdc.mul(100);
         availableAmount = availableAmount - STKHBBuy;
         USDC.transferFrom(buyer, thisContract, usdc);
         totalRaised = totalRaised + usdc;
@@ -1163,13 +1215,13 @@ contract STKHBPublicSale is Ownable {
         purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].add(usdc);
     }
     
-    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) withinSaleBlock {
+    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) withinSaleBlock validRefund {
         uint256 refundAmount;
         uint256 STKHBAmount;
         address purchaser;
         purchaser = _purchaser;
         refundAmount = purchasedUSDCAmount[msg.sender];
-        STKHBAmount = refundAmount * 100;
+        STKHBAmount = refundAmount.mul(100);
         purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].sub(refundAmount);
         purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].sub(STKHBAmount);
         USDC.safeIncreaseAllowance(_purchaser, refundAmount);
@@ -1185,6 +1237,7 @@ contract STKHBPublicSale is Ownable {
         purchasedSTKHBAmount[msg.sender] = 0;
         STKHB.safeIncreaseAllowance(_purchaser, purchasedSTKHB);
         STKHB.transfer(_purchaser, purchasedSTKHB);
+        STKHB.safeDecreaseAllowance(_purchaser, purchasedSTKHB);
     }
     
     function withdrawSaleProceeds(address _owner) public onlyOwner saleFinished {
@@ -1195,6 +1248,11 @@ contract STKHBPublicSale is Ownable {
         STKHB.transfer(_owner, availableAmount);
     }
     
+    modifier validRefund() {
+        require(purchasedSTKHBAmount[msg.sender] > 0);
+        _;
+    }
+    
     modifier onlyPurchaser(address _purchaser) {
         require(_purchaser == msg.sender);
         _;
@@ -1203,8 +1261,8 @@ contract STKHBPublicSale is Ownable {
     modifier withinMaxPurchase(uint256 _USDCAmount) {
         uint256 usdc;
         uint256 STKHBBuy;
-        usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 100;
+        usdc = _USDCAmount.mul(1e18);
+        STKHBBuy = usdc .mul(100);
         require((purchasedSTKHBAmount[msg.sender] + STKHBBuy) <= maxBuy);
         _;
     }
@@ -1212,8 +1270,8 @@ contract STKHBPublicSale is Ownable {
     modifier withinSaleAmount(uint256 _USDCAmount) {
         uint256 usdc;
         uint256 STKHBBuy;
-        usdc = _USDCAmount * 1e18;
-        STKHBBuy = usdc * 100;
+        usdc = _USDCAmount.mul(1e18);
+        STKHBBuy = usdc.mul(100);
         require(STKHBBuy <= availableAmount);
         _;
     }
@@ -1227,4 +1285,4 @@ contract STKHBPublicSale is Ownable {
         require(block.timestamp >= saleEnd);
         _;
     }
-}   
+} 
