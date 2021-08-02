@@ -2,6 +2,9 @@
 
 pragma solidity 0.8.6;
 
+/**
+ * @dev Interface of the ERC20 standard as defined in the EIP.
+ */
 interface IERC20 {
     /**
      * @dev Returns the amount of tokens in existence.
@@ -373,6 +376,303 @@ abstract contract Context {
     }
 }
 
+contract ERC20 is Context, IERC20, IERC20Metadata {
+    mapping(address => uint256) private _balances;
+
+    mapping(address => mapping(address => uint256)) private _allowances;
+
+    uint256 private _totalSupply;
+
+    string private _name;
+    string private _symbol;
+
+    /**
+     * @dev Sets the values for {name} and {symbol}.
+     *
+     * The default value of {decimals} is 18. To select a different value for
+     * {decimals} you should overload it.
+     *
+     * All two of these values are immutable: they can only be set once during
+     * construction.
+     */
+    constructor(string memory name_, string memory symbol_) {
+        _name = name_;
+        _symbol = symbol_;
+    }
+
+    /**
+     * @dev Returns the name of the token.
+     */
+    function name() public view virtual override returns (string memory) {
+        return _name;
+    }
+
+    /**
+     * @dev Returns the symbol of the token, usually a shorter version of the
+     * name.
+     */
+    function symbol() public view virtual override returns (string memory) {
+        return _symbol;
+    }
+
+    /**
+     * @dev Returns the number of decimals used to get its user representation.
+     * For example, if `decimals` equals `2`, a balance of `505` tokens should
+     * be displayed to a user as `5,05` (`505 / 10 ** 2`).
+     *
+     * Tokens usually opt for a value of 18, imitating the relationship between
+     * Ether and Wei. This is the value {ERC20} uses, unless this function is
+     * overridden;
+     *
+     * NOTE: This information is only used for _display_ purposes: it in
+     * no way affects any of the arithmetic of the contract, including
+     * {IERC20-balanceOf} and {IERC20-transfer}.
+     */
+    function decimals() public view virtual override returns (uint8) {
+        return 18;
+    }
+
+    /**
+     * @dev See {IERC20-totalSupply}.
+     */
+    function totalSupply() public view virtual override returns (uint256) {
+        return _totalSupply;
+    }
+
+    /**
+     * @dev See {IERC20-balanceOf}.
+     */
+    function balanceOf(address account) public view virtual override returns (uint256) {
+        return _balances[account];
+    }
+
+    /**
+     * @dev See {IERC20-transfer}.
+     *
+     * Requirements:
+     *
+     * - `recipient` cannot be the zero address.
+     * - the caller must have a balance of at least `amount`.
+     */
+    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
+        _transfer(_msgSender(), recipient, amount);
+        return true;
+    }
+
+    /**
+     * @dev See {IERC20-allowance}.
+     */
+    function allowance(address owner, address spender) public view virtual override returns (uint256) {
+        return _allowances[owner][spender];
+    }
+
+    /**
+     * @dev See {IERC20-approve}.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     */
+    function approve(address spender, uint256 amount) public virtual override returns (bool) {
+        _approve(_msgSender(), spender, amount);
+        return true;
+    }
+
+    /**
+     * @dev See {IERC20-transferFrom}.
+     *
+     * Emits an {Approval} event indicating the updated allowance. This is not
+     * required by the EIP. See the note at the beginning of {ERC20}.
+     *
+     * Requirements:
+     *
+     * - `sender` and `recipient` cannot be the zero address.
+     * - `sender` must have a balance of at least `amount`.
+     * - the caller must have allowance for ``sender``'s tokens of at least
+     * `amount`.
+     */
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) public virtual override returns (bool) {
+        _transfer(sender, recipient, amount);
+
+        uint256 currentAllowance = _allowances[sender][_msgSender()];
+        require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
+        unchecked {
+            _approve(sender, _msgSender(), currentAllowance - amount);
+        }
+
+        return true;
+    }
+
+    /**
+     * @dev Atomically increases the allowance granted to `spender` by the caller.
+     *
+     * This is an alternative to {approve} that can be used as a mitigation for
+     * problems described in {IERC20-approve}.
+     *
+     * Emits an {Approval} event indicating the updated allowance.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     */
+    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
+        _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
+        return true;
+    }
+
+    /**
+     * @dev Atomically decreases the allowance granted to `spender` by the caller.
+     *
+     * This is an alternative to {approve} that can be used as a mitigation for
+     * problems described in {IERC20-approve}.
+     *
+     * Emits an {Approval} event indicating the updated allowance.
+     *
+     * Requirements:
+     *
+     * - `spender` cannot be the zero address.
+     * - `spender` must have allowance for the caller of at least
+     * `subtractedValue`.
+     */
+    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
+        uint256 currentAllowance = _allowances[_msgSender()][spender];
+        require(currentAllowance >= subtractedValue, "ERC20: decreased allowance below zero");
+        unchecked {
+            _approve(_msgSender(), spender, currentAllowance - subtractedValue);
+        }
+
+        return true;
+    }
+
+    /**
+     * @dev Moves `amount` of tokens from `sender` to `recipient`.
+     *
+     * This internal function is equivalent to {transfer}, and can be used to
+     * e.g. implement automatic token fees, slashing mechanisms, etc.
+     *
+     * Emits a {Transfer} event.
+     *
+     * Requirements:
+     *
+     * - `sender` cannot be the zero address.
+     * - `recipient` cannot be the zero address.
+     * - `sender` must have a balance of at least `amount`.
+     */
+    function _transfer(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) internal virtual {
+        require(sender != address(0), "ERC20: transfer from the zero address");
+        require(recipient != address(0), "ERC20: transfer to the zero address");
+
+        _beforeTokenTransfer(sender, recipient, amount);
+
+        uint256 senderBalance = _balances[sender];
+        require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
+        unchecked {
+            _balances[sender] = senderBalance - amount;
+        }
+        _balances[recipient] += amount;
+
+        emit Transfer(sender, recipient, amount);
+    }
+
+    /** @dev Creates `amount` tokens and assigns them to `account`, increasing
+     * the total supply.
+     *
+     * Emits a {Transfer} event with `from` set to the zero address.
+     *
+     * Requirements:
+     *
+     * - `account` cannot be the zero address.
+     */
+    function _mint(address account, uint256 amount) internal virtual {
+        require(account != address(0), "ERC20: mint to the zero address");
+
+        _beforeTokenTransfer(address(0), account, amount);
+
+        _totalSupply += amount;
+        _balances[account] += amount;
+        emit Transfer(address(0), account, amount);
+    }
+
+    /**
+     * @dev Destroys `amount` tokens from `account`, reducing the
+     * total supply.
+     *
+     * Emits a {Transfer} event with `to` set to the zero address.
+     *
+     * Requirements:
+     *
+     * - `account` cannot be the zero address.
+     * - `account` must have at least `amount` tokens.
+     */
+    function _burn(address account, uint256 amount) internal virtual {
+        require(account != address(0), "ERC20: burn from the zero address");
+
+        _beforeTokenTransfer(account, address(0), amount);
+
+        uint256 accountBalance = _balances[account];
+        require(accountBalance >= amount, "ERC20: burn amount exceeds balance");
+        unchecked {
+            _balances[account] = accountBalance - amount;
+        }
+        _totalSupply -= amount;
+
+        emit Transfer(account, address(0), amount);
+    }
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the `owner` s tokens.
+     *
+     * This internal function is equivalent to `approve`, and can be used to
+     * e.g. set automatic allowances for certain subsystems, etc.
+     *
+     * Emits an {Approval} event.
+     *
+     * Requirements:
+     *
+     * - `owner` cannot be the zero address.
+     * - `spender` cannot be the zero address.
+     */
+    function _approve(
+        address owner,
+        address spender,
+        uint256 amount
+    ) internal virtual {
+        require(owner != address(0), "ERC20: approve from the zero address");
+        require(spender != address(0), "ERC20: approve to the zero address");
+
+        _allowances[owner][spender] = amount;
+        emit Approval(owner, spender, amount);
+    }
+
+    /**
+     * @dev Hook that is called before any transfer of tokens. This includes
+     * minting and burning.
+     *
+     * Calling conditions:
+     *
+     * - when `from` and `to` are both non-zero, `amount` of ``from``'s tokens
+     * will be to transferred to `to`.
+     * - when `from` is zero, `amount` tokens will be minted for `to`.
+     * - when `to` is zero, `amount` of ``from``'s tokens will be burned.
+     * - `from` and `to` are never both zero.
+     *
+     * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
+     */
+    function _beforeTokenTransfer(
+        address from,
+        address to,
+        uint256 amount
+    ) internal virtual {}
+}
+
 abstract contract Ownable is Context {
     address private _owner;
 
@@ -714,333 +1014,17 @@ library SafeERC20 {
     }
 }
 
-contract ERC20 is Context, IERC20, IERC20Metadata {
-    mapping(address => uint256) private _balances;
-
-    mapping(address => mapping(address => uint256)) private _allowances;
-
-    uint256 private _totalSupply;
-
-    string private _name;
-    string private _symbol;
-
-    /**
-     * @dev Sets the values for {name} and {symbol}.
-     *
-     * The default value of {decimals} is 18. To select a different value for
-     * {decimals} you should overload it.
-     *
-     * All two of these values are immutable: they can only be set once during
-     * construction.
-     */
-    constructor(string memory name_, string memory symbol_) {
-        _name = name_;
-        _symbol = symbol_;
-    }
-
-    /**
-     * @dev Returns the name of the token.
-     */
-    function name() public view virtual override returns (string memory) {
-        return _name;
-    }
-
-    /**
-     * @dev Returns the symbol of the token, usually a shorter version of the
-     * name.
-     */
-    function symbol() public view virtual override returns (string memory) {
-        return _symbol;
-    }
-
-    /**
-     * @dev Returns the number of decimals used to get its user representation.
-     * For example, if `decimals` equals `2`, a balance of `505` tokens should
-     * be displayed to a user as `5,05` (`505 / 10 ** 2`).
-     *
-     * Tokens usually opt for a value of 18, imitating the relationship between
-     * Ether and Wei. This is the value {ERC20} uses, unless this function is
-     * overridden;
-     *
-     * NOTE: This information is only used for _display_ purposes: it in
-     * no way affects any of the arithmetic of the contract, including
-     * {IERC20-balanceOf} and {IERC20-transfer}.
-     */
-    function decimals() public view virtual override returns (uint8) {
-        return 18;
-    }
-
-    /**
-     * @dev See {IERC20-totalSupply}.
-     */
-    function totalSupply() public view virtual override returns (uint256) {
-        return _totalSupply;
-    }
-
-    /**
-     * @dev See {IERC20-balanceOf}.
-     */
-    function balanceOf(address account) public view virtual override returns (uint256) {
-        return _balances[account];
-    }
-
-    /**
-     * @dev See {IERC20-transfer}.
-     *
-     * Requirements:
-     *
-     * - `recipient` cannot be the zero address.
-     * - the caller must have a balance of at least `amount`.
-     */
-    function transfer(address recipient, uint256 amount) public virtual override returns (bool) {
-        _transfer(_msgSender(), recipient, amount);
-        return true;
-    }
-
-    /**
-     * @dev See {IERC20-allowance}.
-     */
-    function allowance(address owner, address spender) public view virtual override returns (uint256) {
-        return _allowances[owner][spender];
-    }
-
-    /**
-     * @dev See {IERC20-approve}.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     */
-    function approve(address spender, uint256 amount) public virtual override returns (bool) {
-        _approve(_msgSender(), spender, amount);
-        return true;
-    }
-
-    /**
-     * @dev See {IERC20-transferFrom}.
-     *
-     * Emits an {Approval} event indicating the updated allowance. This is not
-     * required by the EIP. See the note at the beginning of {ERC20}.
-     *
-     * Requirements:
-     *
-     * - `sender` and `recipient` cannot be the zero address.
-     * - `sender` must have a balance of at least `amount`.
-     * - the caller must have allowance for ``sender``'s tokens of at least
-     * `amount`.
-     */
-    function transferFrom(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) public virtual override returns (bool) {
-        _transfer(sender, recipient, amount);
-
-        uint256 currentAllowance = _allowances[sender][_msgSender()];
-        require(currentAllowance >= amount, "ERC20: transfer amount exceeds allowance");
-        unchecked {
-            _approve(sender, _msgSender(), currentAllowance - amount);
-        }
-
-        return true;
-    }
-
-    /**
-     * @dev Atomically increases the allowance granted to `spender` by the caller.
-     *
-     * This is an alternative to {approve} that can be used as a mitigation for
-     * problems described in {IERC20-approve}.
-     *
-     * Emits an {Approval} event indicating the updated allowance.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     */
-    function increaseAllowance(address spender, uint256 addedValue) public virtual returns (bool) {
-        _approve(_msgSender(), spender, _allowances[_msgSender()][spender] + addedValue);
-        return true;
-    }
-
-    /**
-     * @dev Atomically decreases the allowance granted to `spender` by the caller.
-     *
-     * This is an alternative to {approve} that can be used as a mitigation for
-     * problems described in {IERC20-approve}.
-     *
-     * Emits an {Approval} event indicating the updated allowance.
-     *
-     * Requirements:
-     *
-     * - `spender` cannot be the zero address.
-     * - `spender` must have allowance for the caller of at least
-     * `subtractedValue`.
-     */
-    function decreaseAllowance(address spender, uint256 subtractedValue) public virtual returns (bool) {
-        uint256 currentAllowance = _allowances[_msgSender()][spender];
-        require(currentAllowance >= subtractedValue, "ERC20: decreased allowance below zero");
-        unchecked {
-            _approve(_msgSender(), spender, currentAllowance - subtractedValue);
-        }
-
-        return true;
-    }
-
-    /**
-     * @dev Moves `amount` of tokens from `sender` to `recipient`.
-     *
-     * This internal function is equivalent to {transfer}, and can be used to
-     * e.g. implement automatic token fees, slashing mechanisms, etc.
-     *
-     * Emits a {Transfer} event.
-     *
-     * Requirements:
-     *
-     * - `sender` cannot be the zero address.
-     * - `recipient` cannot be the zero address.
-     * - `sender` must have a balance of at least `amount`.
-     */
-    function _transfer(
-        address sender,
-        address recipient,
-        uint256 amount
-    ) internal virtual {
-        require(sender != address(0), "ERC20: transfer from the zero address");
-        require(recipient != address(0), "ERC20: transfer to the zero address");
-
-        _beforeTokenTransfer(sender, recipient, amount);
-
-        uint256 senderBalance = _balances[sender];
-        require(senderBalance >= amount, "ERC20: transfer amount exceeds balance");
-        unchecked {
-            _balances[sender] = senderBalance - amount;
-        }
-        _balances[recipient] += amount;
-
-        emit Transfer(sender, recipient, amount);
-    }
-
-    /** @dev Creates `amount` tokens and assigns them to `account`, increasing
-     * the total supply.
-     *
-     * Emits a {Transfer} event with `from` set to the zero address.
-     *
-     * Requirements:
-     *
-     * - `account` cannot be the zero address.
-     */
-    function _mint(address account, uint256 amount) internal virtual {
-        require(account != address(0), "ERC20: mint to the zero address");
-
-        _beforeTokenTransfer(address(0), account, amount);
-
-        _totalSupply += amount;
-        _balances[account] += amount;
-        emit Transfer(address(0), account, amount);
-    }
-
-    /**
-     * @dev Destroys `amount` tokens from `account`, reducing the
-     * total supply.
-     *
-     * Emits a {Transfer} event with `to` set to the zero address.
-     *
-     * Requirements:
-     *
-     * - `account` cannot be the zero address.
-     * - `account` must have at least `amount` tokens.
-     */
-    function _burn(address account, uint256 amount) internal virtual {
-        require(account != address(0), "ERC20: burn from the zero address");
-
-        _beforeTokenTransfer(account, address(0), amount);
-
-        uint256 accountBalance = _balances[account];
-        require(accountBalance >= amount, "ERC20: burn amount exceeds balance");
-        unchecked {
-            _balances[account] = accountBalance - amount;
-        }
-        _totalSupply -= amount;
-
-        emit Transfer(account, address(0), amount);
-    }
-
-    /**
-     * @dev Sets `amount` as the allowance of `spender` over the `owner` s tokens.
-     *
-     * This internal function is equivalent to `approve`, and can be used to
-     * e.g. set automatic allowances for certain subsystems, etc.
-     *
-     * Emits an {Approval} event.
-     *
-     * Requirements:
-     *
-     * - `owner` cannot be the zero address.
-     * - `spender` cannot be the zero address.
-     */
-    function _approve(
-        address owner,
-        address spender,
-        uint256 amount
-    ) internal virtual {
-        require(owner != address(0), "ERC20: approve from the zero address");
-        require(spender != address(0), "ERC20: approve to the zero address");
-
-        _allowances[owner][spender] = amount;
-        emit Approval(owner, spender, amount);
-    }
-
-    /**
-     * @dev Hook that is called before any transfer of tokens. This includes
-     * minting and burning.
-     *
-     * Calling conditions:
-     *
-     * - when `from` and `to` are both non-zero, `amount` of ``from``'s tokens
-     * will be to transferred to `to`.
-     * - when `from` is zero, `amount` tokens will be minted for `to`.
-     * - when `to` is zero, `amount` of ``from``'s tokens will be burned.
-     * - `from` and `to` are never both zero.
-     *
-     * To learn more about hooks, head to xref:ROOT:extending-contracts.adoc#using-hooks[Using Hooks].
-     */
-    function _beforeTokenTransfer(
-        address from,
-        address to,
-        uint256 amount
-    ) internal virtual {}
-}
-
-contract TESTUSDC is ERC20 {
-    using SafeMath for uint256;
-    using SafeERC20 for IERC20;
-    
-    /**
-    * @notice Creates STKHB
-    * @param _owner Sets the owner wallet address 
-    * @param _supply Sets the initial supply of STKHB (Uses 18 decimal places).
-    */
-    constructor(address _owner, uint256 _supply) 
-        ERC20 ("test", "test")
-    { 
-        _mint(_owner, _supply);
-    }
-    
-    
-}
-
 contract StakeHubToken is ERC20, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
-    
-    address[] public approvedBallots;
-    
-    address[] public approvedPools;
-    
     mapping(address => uint256) public stakeholderTotals;
     
+    mapping(address => address) public approvedBallots;
     
+    mapping(address => address) public approvedPools;
+    
+    uint256 public totalStaked;
     
     /**
     * @notice Creates STKHB
@@ -1053,12 +1037,25 @@ contract StakeHubToken is ERC20, Ownable {
         _mint(_owner, _supply);
     }
     
+    function viewTotalStaked() public view returns(uint256) {
+        return totalStaked;
+    }
+    
+    
+    function addTotalStaked(address _SP, uint256 _amount) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        totalStaked = totalStaked.add(_amount);
+    }
+    
+    function removeTotalStaked(address _SP, uint256 _amount) external onlyStakePoolCall(_SP) isApprovedPool(_SP) {
+        totalStaked = totalStaked.sub(_amount);
+    }
+    
     function approvePool(address _SP) public onlyOwner {
-        approvedPools.push(_SP);
+        approvedPools[_SP] = _SP;
     }
     
     function approveBallot(address _VB) public onlyOwner {
-        approvedBallots.push(_VB);
+        approvedBallots[_VB] = _VB;
     }
     
     
@@ -1120,17 +1117,13 @@ contract StakeHubToken is ERC20, Ownable {
     }
     
     modifier isApprovedPool(address _SP) {
-        for(uint256 s = 0; s < approvedPools.length; s += 1) {
-            require(approvedPools[s] == _SP);
+            require(approvedPools[_SP] == _SP);
             _;
-        }
     }
     
     modifier isApprovedBallot(address _VB) {
-        for(uint256 s = 0; s < approvedBallots.length; s += 1) {
-            require(approvedBallots[s] == _VB);
-            _;
-        }
+        require(approvedBallots[_VB] == _VB);
+        _;    
     }
     
     modifier onlyVoteBallotCall(address _VB) {
@@ -1140,149 +1133,430 @@ contract StakeHubToken is ERC20, Ownable {
     
 }
 
-contract STKHBPublicSale is Ownable {
+contract StakingPools is Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
-    IERC20 public USDC;
+    uint256 public rewardRate;
     
-    IERC20 public STKHB;
+    uint256 public rewardBlockTime;
+    
+    address public stakePool;
+    
+    address public SHF;
+    
+    address[] internal stakeholders;
+
+    mapping(address => uint256) public stakes;
+
+    mapping(address => uint256) internal rewards;
+    
+    mapping (address => uint256) internal stakeStart;
+    
+    
+    constructor(address _STKHB) {
+        SHF = _STKHB;
+    }
+    
+    function setSPAddress(address _SP) public onlyOwner {
+        stakePool = _SP;
+    }
+    
+    /**
+    * @notice A method for a stakeholder to create a stake.
+    * @param _stakeMaker The stakeholder to create stakes for.
+    * @param _stake The size of the stake to be created.
+    * STAKE FEE - 0.5% - _stakedAmount includes a permanent burn of 0.5% of the total stake.
+    */
+    function createStake(address _stakeMaker, uint256 _stake)
+        onlyStakeholder(_stakeMaker)
+        public
+    {
+        StakeHubToken STKHB = StakeHubToken(SHF);
+        _stake = _stake * 1e18;
+        uint256 _stakedAmount;
+        if(stakes[msg.sender] > 0) collectRewards(msg.sender);
+        STKHB.burnStake(stakePool, _stakeMaker, _stake);
+        _stakedAmount = _stake - (((_stake * 1e5) - ((_stake * 1e5) * (.995 * 1e5) / 1e5)) / 1e5);
+        if(stakes[msg.sender] == 0) addStakeholder(msg.sender);
+        stakes[msg.sender] = stakes[msg.sender].add(_stakedAmount);
+        STKHB.addStakeholderTotals(stakePool, _stakedAmount, _stakeMaker);
+        STKHB.addTotalStaked(stakePool, _stakedAmount);
+        stakeStart[msg.sender] = block.timestamp;
+    }
+
+    /**
+    * @notice A method for a stakeholder to remove a stake.
+    * @param _stake The size of the stake to be removed.
+    */
+    function removeStake (address _stakeMaker, uint256 _stake)
+        onlyStakeholder(_stakeMaker)
+        validRemovalAmount(_stake)
+        public
+    {
+        StakeHubToken STKHB = StakeHubToken(SHF);
+        _stake = _stake * 1e18;
+        collectRewards(msg.sender);
+        stakes[msg.sender] = stakes[msg.sender].sub(_stake);
+        STKHB.removeStakeholderTotals(stakePool, _stake, _stakeMaker);
+        STKHB.removeTotalStaked(stakePool, _stake);
+        if(stakes[msg.sender] == 0) removeStakeholder(msg.sender);
+        if(stakes[msg.sender] == 0) stakeStart[msg.sender] = 0;
+        STKHB.mintStakedAmount(stakePool, _stakeMaker, _stake);
+        
+    }
+    
+    function removeFullStake(address _stakeMaker) public onlyStakeholder(_stakeMaker) {
+        StakeHubToken STKHB = StakeHubToken(SHF);
+        collectRewards(msg.sender);
+        uint256 removalAmount;
+        removalAmount = stakes[msg.sender];
+        stakes[msg.sender] = 0;
+        STKHB.removeStakeholderTotals(stakePool, removalAmount, _stakeMaker);
+        removeStakeholder(msg.sender);
+        STKHB.mintStakedAmount(stakePool, _stakeMaker, removalAmount);
+    }
+
+    /**
+    * @notice A method to retrieve the stake for a stakeholder.
+    * @param _stakeholder The stakeholder to retrieve the stake of.
+    * @return uint256 The amount of STKHB staked.
+    */
+    function stakeOf(address _stakeholder)
+        public
+        view
+        returns(uint256)
+    {
+        return stakes[_stakeholder];
+    }
+
+    /**
+    * @notice A method to the aggregated stakes from all stakeholders.
+    * @return uint256 The aggregated stakes from all stakeholders.
+    */
+    function totalStakes()
+        public
+        view
+        returns(uint256)
+    {
+        uint256 _totalStakes = 0;
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            _totalStakes = _totalStakes.add(stakes[stakeholders[s]]);
+        }
+        return _totalStakes;
+    }
+    
+    /**
+    * @notice A method to the aggregated rewards from all stakeholders.
+    * @return uint256 The aggregated rewards from all stakeholders.
+    */
+    function totalRewards()
+        public
+        view
+        returns(uint256)
+    {
+        uint256 _totalRewards = 0;
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            _totalRewards = _totalRewards.add(calculateReward(stakeholders[s]));
+        }
+        return _totalRewards;
+    }
+
+    // ---------- STAKEHOLDERS ----------
+
+    /**
+    * @notice A method to check if an address is a stakeholder.
+    * @param _address The address to verify.
+    * @return bool, uint256 Whether the address is a stakeholder, 
+    * and if so its position in the stakeholders array.
+    */
+    function isStakeholder(address _address)
+        public
+        view
+        returns(bool, uint256)
+    {
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            if (_address == stakeholders[s]) return (true, s);
+        }
+        return (false, 0);
+    }
+
+    /**
+    * @notice A method to add a stakeholder.
+    * @param _stakeholder The stakeholder to add.
+    */
+    function addStakeholder(address _stakeholder)
+        public
+    {
+        (bool _isStakeholder, ) = isStakeholder(_stakeholder);
+        if(!_isStakeholder) stakeholders.push(_stakeholder);
+    }
+
+    /**
+    * @notice A method to remove a stakeholder.
+    * @param _stakeholder The stakeholder to remove.
+    */
+    function removeStakeholder(address _stakeholder)
+        public
+    {
+        (bool _isStakeholder, uint256 s) = isStakeholder(_stakeholder);
+        if(_isStakeholder){
+            stakeholders[s] = stakeholders[stakeholders.length - 1];
+            stakeholders.pop();
+        } 
+    }
+
+    // ---------- REWARDS ----------
+    
+    /**
+    * @notice A method to allow a stakeholder to check their rewards.
+    * @param _stakeholder The stakeholder to check rewards for.
+    */
+    function rewardOf(address _stakeholder) 
+        public
+        view
+        returns(uint256)
+    {
+        return calculateReward(_stakeholder);
+    }
+
+    /** 
+    * @notice A method that calculates the rewards for each stakeholder.
+    * @param _stakeholder The stakeholder to calculate rewards for.
+    */
+    function calculateReward(address _stakeholder)
+        public
+        view
+        returns(uint256)
+    {
+        uint256 newRewards;
+        
+        newRewards = (stakes[_stakeholder] * (((block.timestamp - stakeStart[_stakeholder]) / rewardBlockTime) * rewardRate) / 1e15);
+        return newRewards;    
+    }
+    
+    /**
+    * @notice A method to attribute and distrbute rewards
+    * @param _stakeholder The stakeholder to attribute rewards to.
+    */
+    function collectRewards(address _stakeholder)
+        public
+    {
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            StakeHubToken STKHB = StakeHubToken(SHF);
+            address stakeholder = _stakeholder;
+            uint256 reward = calculateReward(stakeholder);
+            rewards[stakeholder] = rewards[stakeholder].add(reward);
+            stakeStart[_stakeholder] = block.timestamp;
+            rewards[_stakeholder] = 0;
+            STKHB.mintRewards(stakePool, _stakeholder, reward);
+        }
+    }
+    
+    /**
+    * @notice A method to change the APY of the contract
+    * @param _rewardRate uint256 that defines the apy as calcualted by (_rewardRate *1e3 *2880 *365) = APY
+    */
+    function setRewardRate(uint256 _rewardRate) public onlyOwner returns (uint256) {
+        for (uint256 s = 0; s < stakeholders.length; s += 1){
+            collectRewards(stakeholders[s]);
+        }
+        return rewardRate = _rewardRate * 1e3;
+    }
+    
+    /**
+    * @notice A method to change the reward block time.
+    * @param _time uint256 in seconds.
+    */
+    function setRewardBlockTime(uint256 _time) public onlyOwner returns (uint256) {
+        return rewardBlockTime = _time;
+    }
+    
+    /**
+    * @notice A modifier to verifiy that a user is a current stakeholder prior to accepting the transaction.
+    * @param _stakeholder Address of the stakeholder. 
+    */
+    modifier onlyCurrentStaker(address _stakeholder) {
+        require(stakeOf(msg.sender) != 0);
+        _;
+    }
+    
+    modifier validRemovalAmount(uint256 _stake) {
+        uint256 stake;
+        stake = _stake * 1e18;
+        require(stakes[msg.sender] >= stake);
+        _;
+    }
+    
+    /**
+     * @notice A modifier to prevent anyone but the account owner from executing transactions with this modifier.
+     */
+    modifier onlyStakeholder(address _stakeMaker) {
+        require(_stakeMaker == msg.sender);
+        _;
+    }
+}
+
+contract NonburnVoting is Ownable {
+    using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    
+    address public stkhb;
     
     address public thisContract;
     
-    uint256 public maxBuy;
+    //uint256 for nonburn voting //
+    uint256 public nonburnYesVoteAmount;
+    uint256 public nonburnNoVoteAmount;
+    uint256 public nonburnVotingBlockEnd;
     
-    uint256 public availableAmount;
+    mapping (address => uint256) internal voterStatus;
     
-    uint256 public totalRaised;
-    
-    uint256 public saleEnd;
-
-    mapping(address => uint256) internal purchasedSTKHBAmount;
-    
-    mapping(address => uint256) internal purchasedUSDCAmount;
-    
-    constructor(uint256 _hardCap, uint256 _maxBuy, IERC20 _USDC, IERC20 _STKHB) {
-        availableAmount = _hardCap;
-        maxBuy = _maxBuy;
-        USDC = _USDC;
-        STKHB = _STKHB;
+    constructor(address _STKHB) {
+        stkhb = _STKHB;
     }
     
-    function viewPersonalUSDC(address _purchaser) public view returns(uint256) {
-        return purchasedUSDCAmount[_purchaser];
-    }
-    
-    function viewPersonalSTKHB(address _purchaser) public view returns(uint256) {
-        return purchasedSTKHBAmount[_purchaser];
-    }
-    
-    function viewTotalRaised() public view returns(uint256) {
-        return totalRaised;
-    }
-    
-    function viewRemainingPurchaseBalance() public view returns(uint256) {
-        return maxBuy - purchasedSTKHBAmount[msg.sender];
-    }
-    
-    function setOwner(address _contract) public onlyOwner {
+    function setThisContract(address _contract) public onlyOwner {
         thisContract = _contract;
     }
+
+    // ---------- VOTING THAT DOES NOT BURN STKHB ----------
+    //For all functions below STKHB will be permanently burned\
     
-    function STKHBTotal() public view returns(uint256) {
-        return STKHB.balanceOf(thisContract);
+    /**
+     * @notice A method to start a voting period for non burable votes - Resets previous vote blockers and resets preivous vote amounts
+     * @param _time Defines the amount of time (in seconds) that the vote will be open
+     */ 
+    function setNonBurnVotingPeriod(uint256 _time) public onlyOwner {
+        nonburnVotingBlockEnd = block.timestamp + _time;
+        nonburnYesVoteAmount = 0;
+        nonburnNoVoteAmount = 0;
     }
     
-    function USDCTotal() public view returns(uint256) {
-        return USDC.balanceOf(thisContract);
+    /**
+     * @notice A method to vote yes based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteYes(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod onlyCurrentStaker(_stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteYesAmount;
+        _nonburnVoteYesAmount = STKHB.viewStakeholderTotals(_stakeholder);
+        nonburnYesVoteAmount = nonburnYesVoteAmount + _nonburnVoteYesAmount;
+        voterStatus[msg.sender] = 1;
     }
     
-    function setSaleEnd(uint256 _time) public onlyOwner {
-        saleEnd = block.timestamp + _time;
+    /**
+     * @notice A method to vote no based on your total stakeholdings
+     * @param _stakeholder Defines the address submitting the vote
+     */ 
+    function nonburnVoteNo(address _stakeholder) public checkVoteStatus() inNonburnBlockperiod() onlyCurrentStaker(_stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 _nonburnVoteNoAmount;
+        _nonburnVoteNoAmount = STKHB.viewStakeholderTotals(_stakeholder);
+        nonburnNoVoteAmount = nonburnNoVoteAmount + _nonburnVoteNoAmount;
+        voterStatus[msg.sender] = 1;
     }
     
-    function buySTKHB(address _purchaser, uint256 _USDCAmount) public payable withinSaleAmount(_USDCAmount) withinMaxPurchase(_USDCAmount) withinSaleBlock {
-        uint256 STKHBBuy;
-        uint256 usdc;
-        address buyer;
-        buyer = _purchaser;
-        usdc = _USDCAmount.mul(1e18);
-        STKHBBuy = usdc.mul(100);
-        availableAmount = availableAmount - STKHBBuy;
-        USDC.transferFrom(buyer, thisContract, usdc);
-        totalRaised = totalRaised + usdc;
-        purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].add(STKHBBuy);
-        purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].add(usdc);
-    }
-    
-    function refundPurchase(address _purchaser) public payable onlyPurchaser(_purchaser) withinSaleBlock validRefund {
-        uint256 refundAmount;
-        uint256 STKHBAmount;
-        address purchaser;
-        purchaser = _purchaser;
-        refundAmount = purchasedUSDCAmount[msg.sender];
-        STKHBAmount = refundAmount.mul(100);
-        purchasedUSDCAmount[msg.sender] = purchasedUSDCAmount[msg.sender].sub(refundAmount);
-        purchasedSTKHBAmount[msg.sender] = purchasedSTKHBAmount[msg.sender].sub(STKHBAmount);
-        USDC.safeIncreaseAllowance(_purchaser, refundAmount);
-        USDC.transfer(purchaser, refundAmount);
-        USDC.safeDecreaseAllowance(_purchaser, 0);
-        totalRaised = totalRaised - refundAmount;
-        availableAmount = availableAmount + STKHBAmount;
-    }
-    
-    function withdrawPurchasedBalance(address _purchaser) public payable onlyPurchaser(_purchaser) saleFinished {
-        uint256 purchasedSTKHB;
-        purchasedSTKHB = purchasedSTKHBAmount[msg.sender];
-        purchasedSTKHBAmount[msg.sender] = 0;
-        STKHB.safeIncreaseAllowance(_purchaser, purchasedSTKHB);
-        STKHB.transfer(_purchaser, purchasedSTKHB);
-        STKHB.safeDecreaseAllowance(_purchaser, purchasedSTKHB);
-    }
-    
-    function withdrawSaleProceeds(address _owner) public onlyOwner saleFinished {
-        USDC.transfer(_owner, USDCTotal());
-    }
-    
-    function withdrawRemainingSTKHB(address _owner) public onlyOwner saleFinished {
-        STKHB.transfer(_owner, availableAmount);
-    }
-    
-    modifier validRefund() {
-        require(purchasedSTKHBAmount[msg.sender] > 0);
+    /**
+     * @notice A method to only allow voting during the defined block period
+     */ 
+    modifier inNonburnBlockperiod() {
+        require(block.timestamp < nonburnVotingBlockEnd);
         _;
     }
     
-    modifier onlyPurchaser(address _purchaser) {
-        require(_purchaser == msg.sender);
+    /**
+     * @notice A method to only allow an address to vote once
+     */ 
+    modifier checkVoteStatus() {
+        require(voterStatus[msg.sender] != 1);
         _;
     }
     
-    modifier withinMaxPurchase(uint256 _USDCAmount) {
-        uint256 usdc;
-        uint256 STKHBBuy;
-        usdc = _USDCAmount.mul(1e18);
-        STKHBBuy = usdc .mul(100);
-        require((purchasedSTKHBAmount[msg.sender] + STKHBBuy) <= maxBuy);
+    modifier onlyCurrentStaker(address _stakeholder) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        require(STKHB.viewStakeholderTotals(_stakeholder) > 0);
+        _;
+    }
+}
+
+contract BurnVoting is Ownable {
+     using SafeMath for uint256;
+    using SafeERC20 for IERC20;
+    
+    address public stkhb;
+    
+    address public thisContract;
+    
+    //uint256 for burn voting //
+    uint256 public votingBlockEnd;
+    uint256 public yesVoteAmount;
+    uint256 public noVoteAmount;
+    uint256 public minimumVoteAmount;
+    
+    constructor(address _STKHB) {
+        stkhb = _STKHB;
+    }
+    
+    function setThisContract(address _contract) public onlyOwner {
+        thisContract = _contract;
+    }
+
+     // ---------- VOTING THAT BURNS STKHB ----------
+    //For all functions below STKHB will be permanently burned
+    
+    /**
+     * @notice A method to start a voting period for burnable votes & reset previous vote tallys
+     */
+    function setVotingPeriod(uint256 _time) public onlyOwner {
+        votingBlockEnd = block.timestamp + _time;
+        yesVoteAmount = 0;
+        noVoteAmount = 0;
+    }
+     
+    /**
+     * @notice A method to vote yes and burn the amount voted
+     * @param _voteAmount Defines the number of tokens to burn
+     */ 
+    function voteYes(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) returns(uint256) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 voteAmount = _voteAmount;
+        STKHB.burnVote(thisContract, msg.sender, voteAmount);
+        return yesVoteAmount = yesVoteAmount + voteAmount;
+    }
+     
+    /**
+     * @notice A method to vote no and burn the amount voted
+     * @param _voteAmount Defines the number of tokens to burn
+     */ 
+    function voteNo(uint256 _voteAmount) public inBlockperiod() checkVoteAmount(_voteAmount) returns(uint256) {
+        StakeHubToken STKHB = StakeHubToken(stkhb);
+        uint256 voteAmount = _voteAmount;
+        STKHB.burnVote(thisContract, msg.sender, voteAmount);
+        return noVoteAmount = noVoteAmount + voteAmount;
+    }
+    
+    /**
+     * @notice A method to set the minimum number of tokens allowed to participate in a vote
+     * @param _setVoteAmount Defines the minimum number of tokens allowed
+     */  
+    function setMinimumVoteAmount(uint256 _setVoteAmount) public onlyOwner {
+        minimumVoteAmount = _setVoteAmount * 1e18;
+    }
+    
+    /**
+     * @notice A method to only allow vote submission during the alloted voting time
+     */ 
+    modifier inBlockperiod() {
+        require(block.timestamp < votingBlockEnd);
         _;
     }
     
-    modifier withinSaleAmount(uint256 _USDCAmount) {
-        uint256 usdc;
-        uint256 STKHBBuy;
-        usdc = _USDCAmount.mul(1e18);
-        STKHBBuy = usdc.mul(100);
-        require(STKHBBuy <= availableAmount);
+    /**
+     * @notice A method to only allow vote amounts to meet or exceed the minimum vote amount
+     */ 
+    modifier checkVoteAmount(uint256 _voteAmount) {
+        require(_voteAmount >= (minimumVoteAmount));
         _;
     }
-    
-    modifier withinSaleBlock() {
-        require(block.timestamp <= saleEnd);
-        _;
-    }
-    
-    modifier saleFinished() {
-        require(block.timestamp >= saleEnd);
-        _;
-    }
-}  
+}
