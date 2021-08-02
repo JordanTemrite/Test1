@@ -1018,12 +1018,11 @@ contract StakeHubToken is ERC20, Ownable {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
     
-    
-    address[] public approvedBallots;
-    
-    address[] public approvedPools;
-    
     mapping(address => uint256) public stakeholderTotals;
+    
+    mapping(address => address) public approvedBallots;
+    
+    mapping(address => address) public approvedPools;
     
     
     
@@ -1039,11 +1038,11 @@ contract StakeHubToken is ERC20, Ownable {
     }
     
     function approvePool(address _SP) public onlyOwner {
-        approvedPools.push(_SP);
+        approvedPools[_SP] = _SP;
     }
     
     function approveBallot(address _VB) public onlyOwner {
-        approvedBallots.push(_VB);
+        approvedBallots[_VB] = _VB;
     }
     
     
@@ -1105,17 +1104,13 @@ contract StakeHubToken is ERC20, Ownable {
     }
     
     modifier isApprovedPool(address _SP) {
-        for(uint256 s = 0; s < approvedPools.length; s += 1) {
-            require(approvedPools[s] == _SP);
+            require(approvedPools[_SP] == _SP);
             _;
-        }
     }
     
     modifier isApprovedBallot(address _VB) {
-        for(uint256 s = 0; s < approvedBallots.length; s += 1) {
-            require(approvedBallots[s] == _VB);
-            _;
-        }
+        require(approvedBallots[_VB] == _VB);
+        _;    
     }
     
     modifier onlyVoteBallotCall(address _VB) {
